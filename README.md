@@ -1,6 +1,27 @@
-# Transactional Models Project - Docker Setup
+# Transactional Models Project 🚀
 
-Este proyecto contiene configuraciones Docker para múltiples bases de datos y sistemas de almacenamiento.
+Proyecto completo de modelos transaccionales con múltiples bases de datos y procesos ETL independientes.
+
+## 📋 Contenido
+
+Este proyecto incluye configuraciones Docker y ETLs para:
+
+- **MongoDB** - Base de datos NoSQL orientada a documentos
+- **MySQL** - Base de datos relacional
+- **MS SQL Server** - Base de datos relacional de Microsoft
+- **Neo4j** - Base de datos de grafos
+- **PostgreSQL/Supabase** - Base de datos relacional avanzada
+- **ClickHouse (DWH)** - Data Warehouse para análisis OLAP
+
+## 🏗️ Arquitectura
+
+Cada base de datos es **completamente independiente** con su propio:
+- `docker-compose.yml` - Para iniciar solo ese servicio
+- `Dockerfile` - Imagen personalizada
+- `init/` - Scripts de inicialización automática
+- `etl/` - Proceso ETL (Extract, Transform, Load)
+- `data/` - Datos de ejemplo
+- `.env.example` - Configuración de variables
 
 ## 🚀 Inicio Rápido
 

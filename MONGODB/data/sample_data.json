@@ -1,0 +1,57 @@
+[
+    {
+        "id": 1,
+        "name": "Laptop Dell XPS 15",
+        "category": "Electronics",
+        "price": 1299.99,
+        "stock": 45,
+        "supplier": "Supplier 1",
+        "created_at": "2024-01-15T10:30:00",
+        "active": true,
+        "email": "contact@supplier1.com"
+    },
+    {
+        "id": 2,
+        "name": "Python Programming Book",
+        "category": "Books",
+        "price": 49.99,
+        "stock": 120,
+        "supplier": "Supplier 2",
+        "created_at": "2024-02-20T14:25:00",
+        "active": true,
+        "email": "info@supplier2.com"
+    },
+    {
+        "id": 3,
+        "name": "Wireless Mouse",
+        "category": "Electronics",
+        "price": 29.99,
+        "stock": 200,
+        "supplier": "Supplier 3",
+        "created_at": "2024-03-10T09:15:00",
+        "active": true,
+        "email": "sales@supplier3.com"
+    },
+    {
+        "id": 4,
+        "name": "Office Chair",
+        "category": "Furniture",
+        "price": 249.99,
+        "stock": 30,
+        "supplier": "Supplier 1",
+        "created_at": "2024-04-05T16:45:00",
+        "active": false,
+        "email": "contact@supplier1.com"
+    },
+    {
+        "id": 5,
+        "name": "Mechanical Keyboard",
+        "category": "Electronics",
+        "price": 149.99,
+        "stock": 75,
+        "supplier": "Supplier 4",
+        "created_at": "2024-05-12T11:20:00",
+        "active": true,
+        "email": "support@supplier4.com"
+    }
+]
