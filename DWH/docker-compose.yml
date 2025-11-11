@@ -1,36 +1,17 @@
 version: '3.8'
 
 services:
-  clickhouse:
-    build: .
-    container_name: clickhouse-container
-    restart: unless-stopped
+  sqlserver-dw:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-dw
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-dwh}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse123}
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=BasesDatos2!
     ports:
-      - "8123:8123"  # HTTP
-      - "9000:9000"  # Native
+      - "1434:1433"
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
-      - clickhouse_logs:/var/log/clickhouse-server
-      - ./init:/docker-entrypoint-initdb.d
-      - ./config:/etc/clickhouse-server/config.d
-      - ./data:/data/imports
-    networks:
-      - clickhouse-network
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
-
-networks:
-  clickhouse-network:
-    driver: bridge
+      - sqldatadw:/var/opt/mssql
+    restart: unless-stopped
 
 volumes:
-  clickhouse_data:
-    driver: local
-  clickhouse_logs:
-    driver: local
+  sqldatadw:
