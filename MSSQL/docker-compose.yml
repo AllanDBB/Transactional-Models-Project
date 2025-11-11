@@ -1,14 +1,15 @@
 version: '3.8'
 
 services:
+  # SQL Server Transaccional (para SalesDB_MSSQL)
   mssql:
-    build: .
-    container_name: mssql-container
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-transactional
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
-      SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Password123}
-      MSSQL_PID: ${MSSQL_PID:-Developer}
+      SA_PASSWORD: "BasesDatos2!"
+      MSSQL_PID: "Developer"
     ports:
       - "1433:1433"
     volumes:
@@ -17,6 +18,24 @@ services:
       - mssql_backup:/var/opt/mssql/backup
       - ./init:/docker-entrypoint-initdb.d
       - ./data:/data/imports
+    networks:
+      - mssql-network
+
+  # SQL Server Data Warehouse
+  mssql-dw:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-datawarehouse
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "BasesDatos2!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1434:1433"
+    volumes:
+      - mssql_dw_data:/var/opt/mssql/data
+      - mssql_dw_log:/var/opt/mssql/log
+      - mssql_dw_backup:/var/opt/mssql/backup
     networks:
       - mssql-network
 
@@ -30,4 +49,10 @@ volumes:
   mssql_log:
     driver: local
   mssql_backup:
+    driver: local
+  mssql_dw_data:
+    driver: local
+  mssql_dw_log:
+    driver: local
+  mssql_dw_backup:
     driver: local
