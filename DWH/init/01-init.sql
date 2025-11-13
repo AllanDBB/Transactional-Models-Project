@@ -187,4 +187,25 @@ CREATE INDEX idx_facttarget_customer ON FactTargetSales(customerId);
 CREATE INDEX idx_facttarget_product ON FactTargetSales(productId);
 CREATE INDEX idx_facttarget_period ON FactTargetSales(year, month);
 
+
+-- Sales Goals/Targets table (Metas de Ventas)
+CREATE TABLE MetasVentas (
+    MetaID INT IDENTITY(1,1) PRIMARY KEY,
+    customerId INT NOT NULL,
+    productId INT NOT NULL,
+    Anio INT NOT NULL,
+    Mes INT NOT NULL,
+    MetaUSD DECIMAL(18,2) NOT NULL,
+    CONSTRAINT chk_meta_usd CHECK (MetaUSD >= 0),
+    CONSTRAINT chk_meta_year CHECK (Anio >= 1950 AND Anio <= 2200),
+    CONSTRAINT chk_meta_month CHECK (Mes BETWEEN 1 AND 12),
+    CONSTRAINT fk_meta_customer FOREIGN KEY (customerId) REFERENCES DimCustomer(id),
+    CONSTRAINT fk_meta_product FOREIGN KEY (productId) REFERENCES DimProduct(id),
+    CONSTRAINT unique_meta UNIQUE (customerId, productId, Anio, Mes)
+);
+
+CREATE INDEX idx_meta_customer ON MetasVentas(customerId);
+CREATE INDEX idx_meta_product ON MetasVentas(productId);
+CREATE INDEX idx_meta_period ON MetasVentas(Anio, Mes);
+
 GO
