@@ -1,13 +1,23 @@
 """
 Configuración de conexiones a bases de datos
+Lee de variables de entorno (.env file)
+Permite conexiones locales y remotas (multi-equipo)
 """
 import os
 from typing import Dict
+
+# Intentar cargar variables de .env si existe
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # Si no está instalado python-dotenv, usar solo variables de entorno
 
 class DatabaseConfig:
     """Configuración para conectarse a SQL Server"""
     
     # Base de datos transaccional (fuente)
+    # Valores por defecto para conexión local, sobrescribibles con .env
     SOURCE_DB = {
         'driver': 'ODBC Driver 17 for SQL Server',
         'server': os.getenv('MSSQL_SERVER', 'localhost'),
@@ -18,10 +28,11 @@ class DatabaseConfig:
     }
     
     # Data Warehouse (destino)
+    # Para multi-equipo: usar DW_PORT=1434 (puerto expuesto en docker-compose)
     DW_DB = {
         'driver': 'ODBC Driver 17 for SQL Server',
         'server': os.getenv('MSSQL_DW_SERVER', 'localhost'),
-        'port': int(os.getenv('MSSQL_DW_PORT', '1433')),
+        'port': int(os.getenv('MSSQL_DW_PORT', '1434')),  # Puerto DWH (1434)
         'database': 'MSSQL_DW',
         'uid': os.getenv('MSSQL_DW_USER', 'admin'),
         'pwd': os.getenv('MSSQL_DW_PASSWORD', 'admin123')
