@@ -59,8 +59,14 @@ class DataLoader:
             raise
     
     def load_staging_exchange_rates(self) -> None:
-        """REGLA 2: Carga tabla de tipos de cambio (históricamente USD=1.0 para MSSQL)"""
-        logger.info("Cargando tipos de cambio...")
+        """
+        REGLA 2: Carga tabla de tipos de cambio
+        Por defecto para MSSQL: USD=1.0 (homogéneo en USD)
+        
+        En producción, llamar a bccr_integration.ExchangeRateService.load_historical_rates_to_dwh()
+        para cargar histórico real desde BCCR
+        """
+        logger.info("Cargando tipos de cambio (REGLA 2)...")
         
         try:
             conn = pyodbc.connect(self.connection_string)
@@ -79,6 +85,48 @@ class DataLoader:
             logger.info("✓ Tipos de cambio cargados")
         except Exception as e:
             logger.error(f"Error al cargar tipos de cambio: {str(e)}")
+    
+    def load_staging_exchange_rates_dataframe(self, df_rates: pd.DataFrame) -> int:
+        """
+        REGLA 2: Carga tipos de cambio desde DataFrame
+        Usado por bccr_integration.ExchangeRateService
+        
+        Args:
+            df_rates: DataFrame con columnas: fecha, de_moneda, a_moneda, tasa, fuente
+        
+        Returns:
+            Cantidad de registros insertados
+        """
+        logger.info(f"Cargando {len(df_rates)} tipos de cambio desde DataFrame...")
+        
+        try:
+            conn = pyodbc.connect(self.connection_string)
+            cursor = conn.cursor()
+            
+            inserted = 0
+            for idx, row in df_rates.iterrows():
+                try:
+                    sql = f"""
+                        INSERT INTO staging_tipo_cambio (fecha, de_moneda, a_moneda, tasa, fuente)
+                        VALUES ('{row['fecha']}', '{row['de_moneda']}', '{row['a_moneda']}', {row['tasa']}, '{row['fuente']}')
+                    """
+                    cursor.execute(sql)
+                    inserted += 1
+                except pyodbc.IntegrityError:
+                    # Tipo de cambio ya existe para esa fecha/moneda
+                    logger.debug(f"Tasa {row['fecha']} {row['de_moneda']}/{row['a_moneda']} ya existe")
+                    pass
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            logger.info(f"✓ {inserted} tipos de cambio cargados/verificados")
+            return inserted
+        
+        except Exception as e:
+            logger.error(f"Error al cargar tipos de cambio desde DataFrame: {str(e)}")
+            raise
     
     def load_dim_category(self, df_categorias: pd.DataFrame) -> None:
         """Carga DimCategory"""
