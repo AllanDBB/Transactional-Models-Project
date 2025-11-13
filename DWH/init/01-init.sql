@@ -42,6 +42,56 @@ GO
 
 
 -- ============================================================================
+-- STAGING TABLES (para trazabilidad y mapeos)
+-- ============================================================================
+
+-- Tabla puente para equivalencias de productos (SKU ↔ codigo_alt ↔ codigo_mongo)
+CREATE TABLE staging_map_producto (
+    map_id INT IDENTITY(1,1) PRIMARY KEY,
+    source_system NVARCHAR(50) NOT NULL,           -- 'MSSQL', 'MySQL', 'MongoDB', 'Supabase', 'Neo4j'
+    source_code NVARCHAR(100) NOT NULL,            -- codigo_alt, codigo_mongo, etc
+    sku_oficial NVARCHAR(40) NOT NULL,             -- SKU único en el DWH
+    descripcion NVARCHAR(200),
+    fecha_mapeo DATETIME DEFAULT GETDATE(),
+    activo BIT DEFAULT 1,
+    CONSTRAINT unique_map UNIQUE (source_system, source_code),
+    INDEX idx_sku ON staging_map_producto(sku_oficial),
+    INDEX idx_source ON staging_map_producto(source_system, source_code)
+);
+
+-- Tabla de tipos de cambio (para normalización CRC → USD)
+CREATE TABLE staging_tipo_cambio (
+    cambio_id INT IDENTITY(1,1) PRIMARY KEY,
+    fecha DATE NOT NULL,
+    de_moneda CHAR(3) NOT NULL,                   -- 'CRC', 'MXN', etc
+    a_moneda CHAR(3) NOT NULL,                    -- siempre 'USD'
+    tasa DECIMAL(18,6) NOT NULL,
+    fuente NVARCHAR(100) DEFAULT 'BCCR',          -- fuente del tipo de cambio
+    fecha_actualizacion DATETIME DEFAULT GETDATE(),
+    CONSTRAINT chk_tasa CHECK (tasa > 0),
+    CONSTRAINT chk_monedas CHECK (a_moneda = 'USD'),
+    CONSTRAINT unique_cambio UNIQUE (fecha, de_moneda, a_moneda),
+    INDEX idx_fecha_cambio ON staging_tipo_cambio(fecha, de_moneda),
+    INDEX idx_moneda ON staging_tipo_cambio(de_moneda, a_moneda)
+);
+
+-- Tabla de trazabilidad de registros
+CREATE TABLE staging_source_tracking (
+    tracking_id INT IDENTITY(1,1) PRIMARY KEY,
+    source_system NVARCHAR(50) NOT NULL,
+    source_key NVARCHAR(100) NOT NULL,             -- ID original en sistema fuente
+    tabla_destino NVARCHAR(50) NOT NULL,           -- 'DimCustomer', 'FactSales', etc
+    id_destino INT NOT NULL,                       -- ID en tabla destino del DWH
+    fecha_carga DATETIME DEFAULT GETDATE(),
+    estado NVARCHAR(20) DEFAULT 'ACTIVO',          -- 'ACTIVO', 'INACTIVO', 'ERROR'
+    CONSTRAINT unique_source_key UNIQUE (source_system, source_key, tabla_destino),
+    INDEX idx_source_tracking ON staging_source_tracking(source_system, source_key)
+);
+
+GO
+
+
+-- ============================================================================
 -- DIMENSION TABLES
 -- ============================================================================
 
