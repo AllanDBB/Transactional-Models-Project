@@ -21,11 +21,13 @@ class BCCRIntegration:
     
     API BCCR Documentation:
     - Endpoint: https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/consultaPublica/
-    - Requiere token (gratuito para consultas públicas)
+    - Token: AVMGEIZILV (registrado para consultas públicas)
+    - Indicador 318: USD compra/venta promedio
     - Tasa de cambio USD/CRC diaria
-    
-    Alternativa simplificada: usar JSONP sin autenticación
     """
+    
+    # Token BCCR para autenticación
+    BCCR_TOKEN = "AVMGEIZILV"
     
     # Endpoint BCCR - Tasa de cambio USD/CRC
     BCCR_ENDPOINT = "https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/consultaPublica/"
@@ -47,70 +49,128 @@ class BCCRIntegration:
         """
         REGLA 2: Obtiene tipos de cambio desde BCCR para un período
         
+        Usa API real BCCR con token AVMGEIZILV
+        
         Args:
             start_date: Fecha inicial (datetime)
             end_date: Fecha final (datetime)
-            moneda_origen: 'CRC' (default)
+            moneda_origen: 'CRC' (default - USD también disponible)
             moneda_destino: 'USD' (default)
         
         Returns:
             DataFrame con columnas: fecha, de_moneda, a_moneda, tasa
-        
-        Nota: Esta es una implementación simulada. En producción:
-            1. Registrate en BCCR para obtener token
-            2. Usa endpoint real con autenticación
-            3. Implementa retry logic y rate limiting
         """
-        logger.info(f"Obteniendo tasas BCCR: {moneda_origen} → {moneda_destino}")
+        logger.info(f"Obteniendo tasas BCCR (API REAL): {moneda_origen} → {moneda_destino}")
         logger.info(f"Período: {start_date.date()} a {end_date.date()}")
+        logger.info(f"Token: {self.BCCR_TOKEN}")
         
         try:
             datos = []
             
-            # Generar datos para el período (simulación)
-            # En producción, esto vendría del WebService BCCR
-            fecha_actual = start_date
-            while fecha_actual <= end_date:
-                # Si es día laboral (lunes a viernes)
-                if fecha_actual.weekday() < 5:
-                    # Tasa simulada (en producción, vendría del BCCR)
-                    tasa = self._get_simulated_rate(fecha_actual, moneda_origen, moneda_destino)
+            # Formato de fechas BCCR: DD/MM/YYYY
+            start_str = start_date.strftime('%d/%m/%Y')
+            end_str = end_date.strftime('%d/%m/%Y')
+            
+            # Construir URL del API con token
+            url = (
+                f"{self.BCCR_ENDPOINT}"
+                f"Indicador/{self.USD_INDICATOR}/"
+                f"FechaInicio/{start_str}/"
+                f"FechaFinal/{end_str}/"
+                f"Idioma/ESP"
+            )
+            
+            logger.info(f"Llamando API: {url}")
+            
+            # Hacer request con token en header
+            headers = {
+                'Authorization': f'Bearer {self.BCCR_TOKEN}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'ETL-DWH-MSSQL/1.0'
+            }
+            
+            response = self.session.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Parsear respuesta JSON
+            resultado = response.json()
+            
+            # Estructura típica de respuesta BCCR:
+            # {
+            #   "indicador": "318",
+            #   "titulo": "Tipo de Cambio Dólar",
+            #   "unidad_medida": "₡/USD",
+            #   "datos": [
+            #     {"fecha": "01/11/2025", "numerico": 520.50},
+            #     ...
+            #   ]
+            # }
+            
+            if 'datos' in resultado:
+                for item in resultado['datos']:
+                    fecha_str = item.get('fecha', '')
+                    valor = item.get('numerico', None)
                     
-                    datos.append({
-                        'fecha': fecha_actual.date(),
-                        'de_moneda': moneda_origen,
-                        'a_moneda': moneda_destino,
-                        'tasa': tasa,
-                        'fuente': 'BCCR'
-                    })
-                
-                fecha_actual += timedelta(days=1)
+                    if fecha_str and valor:
+                        try:
+                            # Parsear fecha BCCR (DD/MM/YYYY)
+                            fecha = datetime.strptime(fecha_str, '%d/%m/%Y').date()
+                            
+                            # Calcular tasa de cambio
+                            if moneda_origen == 'CRC' and moneda_destino == 'USD':
+                                # BCCR retorna ₡/USD, queremos 1 CRC = X USD
+                                tasa = 1.0 / float(valor)
+                            elif moneda_origen == 'USD' and moneda_destino == 'CRC':
+                                # USD a CRC (directo)
+                                tasa = float(valor)
+                            else:
+                                tasa = float(valor)
+                            
+                            datos.append({
+                                'fecha': fecha,
+                                'de_moneda': moneda_origen,
+                                'a_moneda': moneda_destino,
+                                'tasa': round(tasa, 6),
+                                'fuente': 'BCCR'
+                            })
+                        except (ValueError, KeyError) as e:
+                            logger.warning(f"Error parseando dato BCCR: {item} - {str(e)}")
+                            continue
+            else:
+                logger.warning(f"Respuesta BCCR sin campo 'datos': {resultado}")
             
             df = pd.DataFrame(datos)
-            logger.info(f"✓ {len(df)} tasas obtenidas de BCCR")
+            logger.info(f"✓ {len(df)} tasas obtenidas de BCCR (API REAL)")
             return df
         
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                logger.error("❌ Token BCCR inválido o expirado (401)")
+            elif e.response.status_code == 404:
+                logger.error("❌ Endpoint BCCR no encontrado (404)")
+            else:
+                logger.error(f"Error HTTP BCCR: {e.response.status_code}")
+            raise
         except Exception as e:
             logger.error(f"Error obteniendo tasas BCCR: {str(e)}")
             raise
     
     def _get_simulated_rate(self, fecha: datetime, from_currency: str, to_currency: str) -> float:
         """
-        Simula tasas BCCR (para desarrollo sin conexión real)
+        [DEPRECATED - Usar API real BCCR]
         
-        En producción, esto llamaría al API real de BCCR
+        Simula tasas BCCR (solo para desarrollo sin conexión real)
+        Ya no se usa - La clase ahora conecta con API real BCCR
         """
-        # Tasa base CRC/USD aproximada (históricamente alrededor de 520 CRC/USD)
-        base_rate = 520.0
+        logger.warning("⚠️ Usando simulación (esta función está deprecada)")
+        logger.info("Para usar API real BCCR, verificar token y conectividad")
         
-        # Simular variaciones diarias pequeñas
+        base_rate = 520.0
         day_factor = (fecha.toordinal() % 100) / 100.0
         
         if from_currency == 'CRC' and to_currency == 'USD':
-            # CRC → USD (1 CRC = X USD)
             rate = 1.0 / (base_rate + (day_factor * 50))
         elif from_currency == 'USD' and to_currency == 'CRC':
-            # USD → CRC (1 USD = X CRC)
             rate = base_rate + (day_factor * 50)
         else:
             rate = 1.0
@@ -151,25 +211,24 @@ class BCCRIntegration:
                            start_date: str, 
                            end_date: str) -> Dict:
         """
-        LLAMADA REAL AL API BCCR (cuando se implemente autenticación)
+        [DEPRECATED - Ya integrado en get_exchange_rates_period()]
+        
+        Llamada manual al API BCCR (sin necesidad de usar este método)
+        get_exchange_rates_period() ya lo hace automáticamente
         
         Args:
-            token: Token de autenticación BCCR
+            token: Token de autenticación BCCR (no usado, token global en clase)
             start_date: Formato 'DD/MM/YYYY'
             end_date: Formato 'DD/MM/YYYY'
         
         Returns:
             Respuesta JSON del API
-        
-        Nota: Requiere registro en https://www.bccr.fi.cr/
-        
-        Ejemplo:
-            curl -X GET "https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/consultaPublica/Indicador/318/FechaInicio/01/12/2021/FechaFinal/31/12/2024/Idioma/ESP" \\
-                 -H "Authorization: Bearer {token}"
         """
+        logger.warning("⚠️ call_bccr_real_api está deprecated - usar get_exchange_rates_period()")
+        
         endpoint = (
             f"https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/"
-            f"consultaPublica/Indicador/318/"  # 318 = USD
+            f"consultaPublica/Indicador/318/"
             f"FechaInicio/{start_date}/"
             f"FechaFinal/{end_date}/"
             f"Idioma/ESP"
@@ -301,7 +360,7 @@ EXEC msdb.dbo.sp_add_jobstep
     @job_name = 'Actualizar_TipoCambio_BCCR',
     @step_name = 'Ejecutar_BCCR_Update',
     @subsystem = 'PowerShell',  -- O usar CmdExec si prefieres cmd
-    @command = 'python C:\\ruta\\al\\etl\\update_bccr_rates.py',
+    @command = 'python C:\Users\Santiago Valverde\Downloads\University\BD2\Transactional-Models-Project\MSSQL\etl\update_bccr_rates.py',
     @retry_attempts = 3,
     @retry_interval = 5
 GO

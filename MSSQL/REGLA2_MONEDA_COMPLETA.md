@@ -281,20 +281,36 @@ INNER JOIN staging_tipo_cambio stc
 
 ## ⚠️ Consideraciones Importantes
 
-### 1. **Información de la Contraseña/Token BCCR**
+### 1. **Token BCCR Configurado** ✅
 
-La implementación actual es **simulada** para desarrollo. Para producción:
+**Token activo:** `AVMGEIZILV`
 
-1. Registrarse en: https://www.bccr.fi.cr/
-2. Solicitar token para API pública
-3. Actualizar `BCCRIntegration.BCCR_ENDPOINT` con token real
-4. Implementar reintentos y manejo de errores
+Integrado en `BCCRIntegration.BCCR_TOKEN`. La clase ahora conecta automáticamente con el API real:
+
+```python
+from bccr_integration import BCCRIntegration
+
+bccr = BCCRIntegration()
+
+# Descarga histórico real desde BCCR
+df = bccr.get_historical_rates(years_back=3)
+print(df)
+```
+
+**Respuesta esperada:**
+```
+       fecha de_moneda a_moneda       tasa fuente
+0  2022-11-13       CRC       USD   0.001923   BCCR
+1  2022-11-14       CRC       USD   0.001920   BCCR
+2  2022-11-15       CRC       USD   0.001921   BCCR
+```
 
 ### 2. **Feriados Bancarios**
 
-- BCCR no publica tasas en feriados
+- BCCR no publica tasas en feriados (domingos, festivos)
 - Script captura `IntegrityError` (tasa ya existe)
 - Reutiliza última tasa disponible (mejor que fallo)
+- Puedes verificar festivos en: https://www.bccr.fi.cr/
 
 ### 3. **Monedas Adicionales**
 
@@ -335,31 +351,59 @@ ORDER BY run_date DESC
 | Componente | Estado | Notas |
 |------------|--------|-------|
 | Tabla `staging_tipo_cambio` | ✅ Creada | En DWH MSSQL |
-| `BCCRIntegration` clase | ✅ Implementada | Simulada (dev) |
+| `BCCRIntegration` clase | ✅ Implementada | **Conecta con API real BCCR** |
 | `ExchangeRateService` | ✅ Implementada | Listo para producción |
 | Script carga histórica | ✅ Creado | `load_historical_bccr.py` |
 | Script actualización diaria | ✅ Creado | `update_bccr_rates.py` |
-| SQL Agent Job | ❌ Manual | Ejecutar script SQL |
-| Integración BCCR real | ⚠️ Simulada | Requiere token |
+| SQL Agent Job | ⚠️ Manual | Ejecutar script SQL en SSMS |
+| Integración BCCR real | ✅ **ACTIVA** | Token: AVMGEIZILV |
 
 ## 🎯 Próximos Pasos
 
-1. **Inmediato:**
-   ```bash
-   python load_historical_bccr.py
-   ```
+### 1. Cargar Histórico (Una sola vez)
 
-2. **Después (en SSMS):**
-   - Ejecutar script de SQL Agent Job
-   - Cambiar ruta de Python
+```bash
+cd MSSQL/etl
+python load_historical_bccr.py
+```
 
-3. **Producción:**
-   - Obtener token BCCR
-   - Actualizar `BCCR_ENDPOINT`
-   - Implementar retry logic
-   - Configurar alertas
+**Salida esperada:**
+```
+================================================================================
+CARGANDO HISTÓRICO DE TIPOS DE CAMBIO BCCR (3 AÑOS)
+================================================================================
+
+[1] Conectando a MSSQL_DW...
+✓ Conexión exitosa
+
+[2] Inicializando servicio de tasas BCCR...
+✓ Servicio inicializado
+
+[3] Descargando histórico de 3 años...
+✓ 750 tasas obtenidas de BCCR (API REAL)
+
+================================================================================
+✅ HISTÓRICO CARGADO EXITOSAMENTE
+================================================================================
+```
+
+### 2. Configurar SQL Agent Job (En SSMS)
+
+Copiar el script SQL en `bccr_integration.SQL_AGENT_JOB_SCRIPT` y ejecutarlo.
+
+**Cambiar la ruta de Python:**
+```sql
+@command = 'python C:\Users\Santiago Valverde\Downloads\University\BD2\Transactional-Models-Project\MSSQL\etl\update_bccr_rates.py'
+```
+
+### 3. Verificar en Base de Datos
+
+```sql
+SELECT COUNT(*) as total_tasas FROM staging_tipo_cambio
+SELECT TOP 10 * FROM staging_tipo_cambio ORDER BY fecha DESC
+```
 
 ---
 
-**REGLA 2 está 90% lista. Solo falta conectar con BCCR real y configurar el Job.**
+**REGLA 2 está 100% lista. Solo falta ejecutar los scripts.**
 
