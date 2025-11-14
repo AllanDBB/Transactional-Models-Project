@@ -5,7 +5,7 @@ Diseñado para ejecutarse desde SQL Agent Job
 REGLA 2: Normalización de moneda - Actualización automática
 
 Para configurar en SQL Server:
-1. Ejecutar: MSSQL/etl/bccr_integration.py → SQL_AGENT_JOB_SCRIPT
+1. Ejecutar: MSSQL/etl/bccr_integration.py -> SQL_AGENT_JOB_SCRIPT
 2. El Job llamará a este script cada día a las 5 AM
 3. Descargará la tasa del día y la insertará en staging_tipo_cambio
 """
@@ -53,12 +53,12 @@ def main():
         # Conectar DWH
         logger.info("\n[1] Conectando a MSSQL_DW...")
         loader = DataLoader(DatabaseConfig.get_dw_connection_string())
-        logger.info("✓ Conexión exitosa")
+        logger.info("[OK] Conexion exitosa")
         
         # Servicio de tasas
         logger.info("\n[2] Inicializando servicio BCCR...")
         service = ExchangeRateService(loader)
-        logger.info("✓ Servicio inicializado")
+        logger.info("[OK] Servicio inicializado")
         
         # Obtener y actualizar tasa del día
         logger.info("\n[3] Descargando tasa del día desde BCCR...")
@@ -66,17 +66,17 @@ def main():
         
         if inserted > 0:
             logger.info("\n" + "=" * 80)
-            logger.info("✅ TASA DIARIA ACTUALIZADA")
+            logger.info("[OK] TASA DIARIA ACTUALIZADA")
             logger.info("=" * 80)
             logger.info(f"\n[RESULTADO]")
-            logger.info(f"  ✓ Registros insertados: {inserted}")
-            logger.info(f"  ✓ Fecha: {datetime.now().date()}")
-            logger.info(f"  ✓ Par: CRC/USD")
-            logger.info(f"  ✓ Tabla: staging_tipo_cambio")
+            logger.info(f"  [OK] Registros insertados: {inserted}")
+            logger.info(f"  [OK] Fecha: {datetime.now().date()}")
+            logger.info(f"  [OK] Par: CRC/USD")
+            logger.info(f"  [OK] Tabla: staging_tipo_cambio")
             return 0
         else:
             logger.warning("\n" + "=" * 80)
-            logger.warning("⚠️ TASA DIARIA NO SE PUDO ACTUALIZAR")
+            logger.warning("[WARN] TASA DIARIA NO SE PUDO ACTUALIZAR")
             logger.warning("=" * 80)
             logger.warning("\nPosibles causas:")
             logger.warning("  - Feriado bancario (BCCR cerrado)")
@@ -86,7 +86,7 @@ def main():
     
     except Exception as e:
         logger.error("\n" + "=" * 80)
-        logger.error("❌ ERROR EN ACTUALIZACIÓN DIARIA")
+        logger.error("[ERROR] ERROR EN ACTUALIZACION DIARIA")
         logger.error("=" * 80)
         logger.error(f"\nDetalle: {str(e)}")
         logger.exception("Traceback completo:")

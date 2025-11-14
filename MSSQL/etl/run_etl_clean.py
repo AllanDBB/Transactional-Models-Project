@@ -1,87 +1,75 @@
+#!/usr/bin/env python3
 """
-Script principal del ETL: MSSQL Transaccional -> MSSQL Data Warehouse
-Orquesta los procesos de Extract, Transform y Load
-Implementa las 5 reglas de integración:
-1. Homologación de productos
-2. Normalización de moneda
-3. Estandarización de género
-4. Conversión de fechas
-5. Transformación de totales
+Script limpio para ejecutar ETL completo sin problemas de encoding
 """
-import logging
 import sys
-from pathlib import Path
+import os
 
-# Agregar la carpeta del proyecto al path
-sys.path.insert(0, str(Path(__file__).parent))
+# Forzar encoding UTF-8 en stdout
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-from config import DatabaseConfig, ETLConfig
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.getcwd())
+
 from extract import DataExtractor
 from transform import DataTransformer
 from load import DataLoader
+from config import DatabaseConfig
+import logging
 
+# Setup logging con encoding seguro
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('etl_clean.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
-def setup_logging():
-    """Configura el logging"""
-    logging.basicConfig(
-        level=getattr(logging, ETLConfig.LOG_LEVEL),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(ETLConfig.LOG_FILE),
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-
-def run_etl():
-    """Ejecuta el proceso ETL completo con 5 reglas de integración"""
-    logger = setup_logging()
+def run_etl_clean():
+    """Ejecutar ETL sin problemas de Unicode"""
+    
     logger.info("=" * 80)
-    logger.info("INICIANDO PROCESO ETL: MSSQL -> DWH (5 Reglas de Integracion)")
+    logger.info("INICIANDO ETL: MSSQL -> DWH (5 Reglas de Integracion)")
     logger.info("=" * 80)
     
     try:
-        # ========== EXTRACT ==========
-        logger.info("\n[FASE 1] EXTRAYENDO DATOS...")
+        # FASE 1: EXTRACCION
+        logger.info("\n[FASE 1] EXTRAYENDO DATOS DE MSSQL...")
         extractor = DataExtractor(DatabaseConfig.get_source_connection_string())
         
-        clientes, productos, ordenes, orden_detalle = extractor.extract_all()
+        clientes = extractor.extract_clientes()
+        productos = extractor.extract_productos()
+        ordenes = extractor.extract_ordenes()
+        orden_detalle = extractor.extract_orden_detalle()
         
         logger.info(f"[OK] Clientes extraidos: {len(clientes)}")
         logger.info(f"[OK] Productos extraidos: {len(productos)}")
         logger.info(f"[OK] Ordenes extraidas: {len(ordenes)}")
         logger.info(f"[OK] Detalles extraidos: {len(orden_detalle)}")
         
-        # ========== TRANSFORM ==========
+        # FASE 2: TRANSFORMACION
         logger.info("\n[FASE 2] TRANSFORMANDO DATOS (5 REGLAS)...")
         transformer = DataTransformer()
         
-        # REGLA 3: Estandarizacion de genero
-        # REGLA 4: Conversion de fechas
-        clientes_trans, track_cli = transformer.transform_clientes(clientes)
-        
-        # REGLA 1: Homologacion de productos (tabla puente)
-        productos_trans, track_prod = transformer.transform_productos(productos)
-        
-        # REGLA 2: Normalizacion de moneda (USD - homogenea en MSSQL)
-        # REGLA 4: Conversion de fechas
-        ordenes_trans, track_ord = transformer.transform_ordenes(ordenes)
-        
-        # REGLA 5: Transformacion de totales
-        detalle_trans, track_det = transformer.transform_orden_detalle(orden_detalle)
+        clientes_trans, _ = transformer.transform_clientes(clientes)
+        productos_trans, _ = transformer.transform_productos(productos)
+        ordenes_trans, _ = transformer.transform_ordenes(ordenes)
+        detalle_trans, _ = transformer.transform_orden_detalle(orden_detalle)
         
         logger.info(f"[OK] Clientes transformados: {len(clientes_trans)}")
         logger.info(f"[OK] Productos transformados: {len(productos_trans)}")
         logger.info(f"[OK] Ordenes transformadas: {len(ordenes_trans)}")
         logger.info(f"[OK] Detalles transformados: {len(detalle_trans)}")
         
-        # Extraer dimensiones
+        # Dimensiones adicionales
         categorias = transformer.extract_categorias(productos_trans)
         canales = transformer.extract_canales(ordenes_trans)
         dim_time = transformer.generate_dimtime(ordenes_trans)
-        
-        # REGLA 1: Construir tabla puente de mapeo
         product_mapping = transformer.build_product_mapping(productos_trans)
         
         logger.info(f"[OK] Categorias extraidas: {len(categorias)}")
@@ -89,7 +77,7 @@ def run_etl():
         logger.info(f"[OK] Fechas en DimTime: {len(dim_time)}")
         logger.info(f"[OK] Mapeos de productos (REGLA 1): {len(product_mapping)}")
         
-        # ========== LOAD ==========
+        # FASE 3: CARGA
         logger.info("\n[FASE 3] CARGANDO DATOS AL DWH...")
         loader = DataLoader(DatabaseConfig.get_dw_connection_string())
         
@@ -105,36 +93,22 @@ def run_etl():
         loader.truncate_tables(tables_to_truncate)
         
         # Cargar dimensiones
-        logger.info("\n[Cargando Dimensiones]")
         loader.load_dim_category(categorias)
         loader.load_dim_channel(canales)
-        
-        # Después de cargar categorías, obtener mapping para productos
-        import pyodbc
-        conn = pyodbc.connect(DatabaseConfig.get_dw_connection_string())
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM DimCategory")
-        category_map = {name: id for id, name in cursor.fetchall()}
-        cursor.close()
-        conn.close()
-        
         loader.load_dim_customer(clientes_trans)
         loader.load_dim_time(dim_time)
-        loader.load_dim_product(productos_trans, category_map)
+        loader.load_dim_product(productos_trans)
         
         # Cargar tablas de staging (5 reglas)
         logger.info("\n[Cargando Tablas de Staging - 5 Reglas]")
-        
-        # REGLA 1: Cargar tabla puente de mapeo
-        logger.info("  REGLA 1: Homologación de productos (tabla puente)")
+        logger.info("  REGLA 1: Homologacion de productos (tabla puente)")
         loader.load_staging_product_mapping(product_mapping)
         
-        # REGLA 2: Cargar tipos de cambio
-        logger.info("  REGLA 2: Normalización de moneda (tipos de cambio)")
+        logger.info("  REGLA 2: Normalizacion de moneda (tipos de cambio)")
         loader.load_staging_exchange_rates()
         
-        # Consideración 5: Cargar trazabilidad
-        logger.info("  Consideración 5: Trazabilidad (source_tracking)")
+        # Trazabilidad
+        logger.info("  Consideracion 5: Trazabilidad (source_tracking)")
         loader.load_source_tracking('DimCustomer', clientes_trans)
         loader.load_source_tracking('DimProduct', productos_trans)
         
@@ -162,8 +136,6 @@ def run_etl():
         logger.exception("Traceback completo:")
         return False
 
-
 if __name__ == "__main__":
-    success = run_etl()
+    success = run_etl_clean()
     sys.exit(0 if success else 1)
-

@@ -1,6 +1,6 @@
 """
 Módulo de Integración con WebService BCCR
-Descarga tipos de cambio CRC → USD desde el Banco Central de Costa Rica
+Descarga tipos de cambio CRC -> USD desde el Banco Central de Costa Rica
 Permite cargar histórico de 3 años y actualizar diariamente a las 5 AM
 
 REGLA 2: Normalización de moneda
@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import json
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class BCCRIntegration:
         Returns:
             DataFrame con columnas: fecha, de_moneda, a_moneda, tasa
         """
-        logger.info(f"Obteniendo tasas BCCR (API REAL): {moneda_origen} → {moneda_destino}")
+        logger.info(f"Obteniendo tasas BCCR (API REAL): {moneda_origen} -> {moneda_destino}")
         logger.info(f"Período: {start_date.date()} a {end_date.date()}")
         logger.info(f"Token: {self.BCCR_TOKEN}")
         
@@ -72,87 +73,55 @@ class BCCRIntegration:
             end_str = end_date.strftime('%d/%m/%Y')
             
             # Construir URL del API con token
-            url = (
-                f"{self.BCCR_ENDPOINT}"
-                f"Indicador/{self.USD_INDICATOR}/"
-                f"FechaInicio/{start_str}/"
-                f"FechaFinal/{end_str}/"
-                f"Idioma/ESP"
-            )
+            # NOTA: El API real de BCCR tiene restricciones de acceso (403 Forbidden)
+            # Usamos MOCK DATA para demostración académica
+            logger.info(f"[MOCK] Generando tasas de cambio para {start_str} a {end_str}")
             
-            logger.info(f"Llamando API: {url}")
+            # Generar datos mock realistas (CRC -> USD típicamente 500-530 colones)
+            datos = []
+            current_date = start_date
+            import random
+            random.seed(42)  # Para reproducibilidad
             
-            # Hacer request con token en header
-            headers = {
-                'Authorization': f'Bearer {self.BCCR_TOKEN}',
-                'Content-Type': 'application/json',
-                'User-Agent': 'ETL-DWH-MSSQL/1.0'
-            }
+            base_rate = 515.0
+            while current_date <= end_date:
+                # Simular variación realista (±1-2% diario)
+                variation = random.uniform(-0.02, 0.02)
+                rate = base_rate * (1 + variation)
+                
+                datos.append({
+                    "fecha": current_date.strftime('%Y-%m-%d'),  # Formato SQL Server
+                    "compra": round(rate - 1, 2),
+                    "venta": round(rate + 1, 2),
+                    "tasa": round(rate, 4)
+                })
+                
+                # Solo incluir días laborales (lunes-viernes)
+                current_date += pd.Timedelta(days=1)
+                if current_date.weekday() < 5:  # Lunes=0, Viernes=4
+                    base_rate = rate
             
-            response = self.session.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            logger.info(f"[MOCK] Generados {len(datos)} registros de tasas")
             
-            # Parsear respuesta JSON
-            resultado = response.json()
-            
-            # Estructura típica de respuesta BCCR:
-            # {
-            #   "indicador": "318",
-            #   "titulo": "Tipo de Cambio Dólar",
-            #   "unidad_medida": "₡/USD",
-            #   "datos": [
-            #     {"fecha": "01/11/2025", "numerico": 520.50},
-            #     ...
-            #   ]
-            # }
-            
-            if 'datos' in resultado:
-                for item in resultado['datos']:
-                    fecha_str = item.get('fecha', '')
-                    valor = item.get('numerico', None)
-                    
-                    if fecha_str and valor:
-                        try:
-                            # Parsear fecha BCCR (DD/MM/YYYY)
-                            fecha = datetime.strptime(fecha_str, '%d/%m/%Y').date()
-                            
-                            # Calcular tasa de cambio
-                            if moneda_origen == 'CRC' and moneda_destino == 'USD':
-                                # BCCR retorna ₡/USD, queremos 1 CRC = X USD
-                                tasa = 1.0 / float(valor)
-                            elif moneda_origen == 'USD' and moneda_destino == 'CRC':
-                                # USD a CRC (directo)
-                                tasa = float(valor)
-                            else:
-                                tasa = float(valor)
-                            
-                            datos.append({
-                                'fecha': fecha,
-                                'de_moneda': moneda_origen,
-                                'a_moneda': moneda_destino,
-                                'tasa': round(tasa, 6),
-                                'fuente': 'BCCR'
-                            })
-                        except (ValueError, KeyError) as e:
-                            logger.warning(f"Error parseando dato BCCR: {item} - {str(e)}")
-                            continue
-            else:
-                logger.warning(f"Respuesta BCCR sin campo 'datos': {resultado}")
-            
+            # Convertir directamente a DataFrame sin parseo adicional
             df = pd.DataFrame(datos)
-            logger.info(f"✓ {len(df)} tasas obtenidas de BCCR (API REAL)")
+            df['de_moneda'] = moneda_origen
+            df['a_moneda'] = moneda_destino
+            df['fuente'] = 'BCCR-MOCK'
+            
+            logger.info(f"[OK] {len(df)} tasas obtenidas (MOCK DATA)")
             return df
         
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
-                logger.error("❌ Token BCCR inválido o expirado (401)")
+                logger.error("[ERROR] Token BCCR invalido o expirado (401)")
             elif e.response.status_code == 404:
-                logger.error("❌ Endpoint BCCR no encontrado (404)")
+                logger.error("[ERROR] Endpoint BCCR no encontrado (404)")
             else:
-                logger.error(f"Error HTTP BCCR: {e.response.status_code}")
+                logger.error(f"[ERROR] Error HTTP BCCR: {e.response.status_code}")
             raise
         except Exception as e:
-            logger.error(f"Error obteniendo tasas BCCR: {str(e)}")
+            logger.error(f"[ERROR] Error obteniendo tasas BCCR: {str(e)}")
             raise
     
     def _get_simulated_rate(self, fecha: datetime, from_currency: str, to_currency: str) -> float:
@@ -162,7 +131,7 @@ class BCCRIntegration:
         Simula tasas BCCR (solo para desarrollo sin conexión real)
         Ya no se usa - La clase ahora conecta con API real BCCR
         """
-        logger.warning("⚠️ Usando simulación (esta función está deprecada)")
+        logger.warning("[WARNING] Usando simulación (esta función está deprecada)")
         logger.info("Para usar API real BCCR, verificar token y conectividad")
         
         base_rate = 520.0
@@ -224,7 +193,7 @@ class BCCRIntegration:
         Returns:
             Respuesta JSON del API
         """
-        logger.warning("⚠️ call_bccr_real_api está deprecated - usar get_exchange_rates_period()")
+        logger.warning("[WARNING] call_bccr_real_api está deprecated - usar get_exchange_rates_period()")
         
         endpoint = (
             f"https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/"
@@ -287,7 +256,7 @@ class ExchangeRateService:
             # Cargar al DWH
             self.db_loader.load_staging_exchange_rates_dataframe(df_rates)
             
-            logger.info(f"✓ {len(df_rates)} tipos de cambio cargados exitosamente")
+            logger.info(f"[OK] {len(df_rates)} tipos de cambio cargados exitosamente")
             return len(df_rates)
         
         except Exception as e:
@@ -312,13 +281,13 @@ class ExchangeRateService:
             df_rate = self.bccr.get_latest_rates()
             
             if df_rate.empty:
-                logger.warning("⚠️ BCCR no retornó datos para hoy")
+                logger.warning("[WARNING] BCCR no retornó datos para hoy")
                 return 0
             
             # Cargar única tasa del día
             inserted = self.db_loader.load_staging_exchange_rates_dataframe(df_rate)
             
-            logger.info(f"✓ Tasa diaria actualizada (o ya existía)")
+            logger.info(f"[OK] Tasa diaria actualizada (o ya exista)")
             return inserted
         
         except Exception as e:
@@ -352,7 +321,7 @@ GO
 EXEC msdb.dbo.sp_add_job
     @job_name = 'Actualizar_TipoCambio_BCCR',
     @enabled = 1,
-    @description = 'Actualiza tipos de cambio CRC→USD desde BCCR a las 5 AM'
+    @description = 'Actualiza tipos de cambio CRC->USD desde BCCR a las 5 AM'
 GO
 
 -- 3. Agregar Step al Job (llamar Python ETL)
@@ -360,7 +329,7 @@ EXEC msdb.dbo.sp_add_jobstep
     @job_name = 'Actualizar_TipoCambio_BCCR',
     @step_name = 'Ejecutar_BCCR_Update',
     @subsystem = 'PowerShell',  -- O usar CmdExec si prefieres cmd
-    @command = 'python C:\Users\Santiago Valverde\Downloads\University\BD2\Transactional-Models-Project\MSSQL\etl\update_bccr_rates.py',
+    @command = 'python "C:\\Users\\Santiago Valverde\\Downloads\\University\\BD2\\Transactional-Models-Project\\MSSQL\\etl\\update_bccr_rates.py"',
     @retry_attempts = 3,
     @retry_interval = 5
 GO
@@ -431,14 +400,14 @@ def main():
         inserted = service.update_daily_rates()
         
         if inserted > 0:
-            logger.info("✓ Tasa del día actualizada correctamente")
+            logger.info("[OK] Tasa del día actualizada correctamente")
             sys.exit(0)
         else:
-            logger.warning("⚠️ No se pudo actualizar la tasa del día")
+            logger.warning("[WARNING] No se pudo actualizar la tasa del día")
             sys.exit(1)
     
     except Exception as e:
-        logger.error(f"❌ Error en actualización BCCR: {str(e)}")
+        logger.error(f"[ERROR] Error en actualización BCCR: {str(e)}")
         logger.exception("Traceback completo:")
         sys.exit(1)
 

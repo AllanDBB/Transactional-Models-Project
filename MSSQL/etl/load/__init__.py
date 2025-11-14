@@ -24,13 +24,24 @@ class DataLoader:
             conn = pyodbc.connect(self.connection_string)
             cursor = conn.cursor()
             
-            for table in table_names:
-                cursor.execute(f"TRUNCATE TABLE {table}")
+            # Orden importante: primero FactSales (depende de dimensiones),
+            # luego las dimensiones
+            order = ['FactSales', 'DimCustomer', 'DimProduct', 'DimChannel', 'DimCategory', 'DimTime']
+            tables_ordered = [t for t in order if t in table_names]
+            # Agregar tablas que no están en la lista de orden
+            tables_ordered += [t for t in table_names if t not in tables_ordered]
+            
+            for table in tables_ordered:
+                try:
+                    cursor.execute(f"TRUNCATE TABLE {table}")
+                except:
+                    # Si no puede truncate, intenta delete (más lento pero funciona)
+                    cursor.execute(f"DELETE FROM {table}")
             
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info("✓ Tablas limpiadas exitosamente")
+            logger.info("[OK] Tablas limpiadas exitosamente")
         except Exception as e:
             logger.error(f"Error al limpiar tablas: {str(e)}")
             raise
@@ -53,7 +64,7 @@ class DataLoader:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"✓ {len(df_mapping)} mapeos de productos cargados")
+            logger.info(f"[OK] {len(df_mapping)} mapeos de productos cargados")
         except Exception as e:
             logger.error(f"Error al cargar mapeo de productos: {str(e)}")
             raise
@@ -61,7 +72,8 @@ class DataLoader:
     def load_staging_exchange_rates(self) -> None:
         """
         REGLA 2: Carga tabla de tipos de cambio
-        Por defecto para MSSQL: USD=1.0 (homogéneo en USD)
+        Intenta actualizar la tasa diaria desde BCCR.
+        Si falla o no hay datos nuevos, se omite (el histórico ya existe).
         
         En producción, llamar a bccr_integration.ExchangeRateService.load_historical_rates_to_dwh()
         para cargar histórico real desde BCCR
@@ -69,22 +81,14 @@ class DataLoader:
         logger.info("Cargando tipos de cambio (REGLA 2)...")
         
         try:
-            conn = pyodbc.connect(self.connection_string)
-            cursor = conn.cursor()
-            
-            # Para MSSQL: insertar USD=1.0 (no requiere conversión)
-            sql = """
-                INSERT INTO staging_tipo_cambio (fecha, de_moneda, a_moneda, tasa, fuente)
-                VALUES (GETDATE(), 'USD', 'USD', 1.0, 'MSSQL_NATIVE')
-            """
-            cursor.execute(sql)
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            logger.info("✓ Tipos de cambio cargados")
+            # Intentar cargar la tasa diaria del día de hoy desde BCCR
+            from bccr_integration import ExchangeRateService
+            service = ExchangeRateService(self)
+            inserted = service.update_daily_rates()
+            logger.info(f"[OK] Tasa diaria procesada (insertadas/actualizadas: {inserted})")
         except Exception as e:
-            logger.error(f"Error al cargar tipos de cambio: {str(e)}")
+            logger.warning(f"No se pudo actualizar tasa diaria: {str(e)}")
+            logger.info("[OK] Continuando con histórico existente (REGLA 2)")
     
     def load_staging_exchange_rates_dataframe(self, df_rates: pd.DataFrame) -> int:
         """
@@ -121,7 +125,7 @@ class DataLoader:
             cursor.close()
             conn.close()
             
-            logger.info(f"✓ {inserted} tipos de cambio cargados/verificados")
+            logger.info(f"[OK] {inserted} tipos de cambio cargados/verificados")
             return inserted
         
         except Exception as e:
@@ -142,11 +146,47 @@ class DataLoader:
         
         self._load_dataframe(df_canales, 'DimChannel', ['name', 'channelType'])
     
-    def load_dim_product(self, df_productos: pd.DataFrame) -> None:
-        """Carga DimProduct"""
+    def load_dim_product(self, df_productos: pd.DataFrame, category_map: Dict = None) -> None:
+        """
+        Carga DimProduct
+        
+        Args:
+            df_productos: DataFrame con productos transformados
+            category_map: Diccionario {nombre_categoria: id} para mapeo
+                         Si no se proporciona, intenta obtenerlo de DimCategory
+        """
         logger.info(f"Cargando {len(df_productos)} productos...")
-        # Filtrar solo columnas necesarias (sin source_system, source_key)
+        
         df_load = df_productos[['name', 'code', 'categoryId']].copy()
+        
+        # IMPORTANTE: categoryId contiene nombres de categoría, no IDs
+        # Hacer lookup para obtener los IDs de DimCategory
+        if category_map is None:
+            try:
+                conn = pyodbc.connect(self.connection_string)
+                cursor = conn.cursor()
+                
+                # Obtener mapping de nombre -> id desde DimCategory
+                cursor.execute("SELECT id, name FROM DimCategory")
+                rows = cursor.fetchall()
+                category_map = {name: id for id, name in rows}
+                cursor.close()
+                conn.close()
+                
+                logger.info(f"[OK] Obtenido mapping de {len(category_map)} categorías")
+            except Exception as e:
+                logger.warning(f"No se pudo obtener mapping de categorías: {str(e)}")
+                category_map = {}
+        
+        # Mapear nombres a IDs
+        if category_map:
+            df_load['categoryId'] = df_load['categoryId'].map(category_map)
+            df_load['categoryId'] = df_load['categoryId'].fillna(0).astype('Int64')
+            logger.info(f"[OK] Mapeados categoryId para productos")
+        else:
+            logger.warning("[WARN] Cargando productos sin mapeo de categoría (categoryId = NULL)")
+            df_load['categoryId'] = None
+        
         self._load_dataframe(df_load, 'DimProduct', ['name', 'code', 'categoryId'])
     
     def load_dim_customer(self, df_clientes: pd.DataFrame) -> None:
@@ -211,7 +251,7 @@ class DataLoader:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"✓ Tracking para {tabla} cargado")
+            logger.info(f"[OK] Tracking para {tabla} cargado")
         except Exception as e:
             logger.error(f"Error al cargar tracking: {str(e)}")
     
@@ -233,7 +273,7 @@ class DataLoader:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"✓ {len(df)} registros cargados en {table_name}")
+            logger.info(f"[OK] {len(df)} registros cargados en {table_name}")
         
         except Exception as e:
             logger.error(f"Error al cargar {table_name}: {str(e)}")

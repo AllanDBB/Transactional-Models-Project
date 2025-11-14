@@ -1,11 +1,11 @@
 """
 Módulo Transform: Aplica reglas de transformación a los datos
 Reglas de Integración (ETL):
-1. Homologación de productos: construir tabla puente para SKU ↔ codigo_alt ↔ codigo_mongo
-2. Normalización de moneda: convertir CRC a USD con tabla de tipo de cambio
-3. Estandarización de género: M/F, Masculino/Femenino, Otro/X → valores únicos
-4. Conversión de fechas: castear VARCHAR a DATE/DATETIME
-5. Transformación de totales: montos string → decimal; montos enteros (CRC) → decimal
+1. Homologacion de productos: construir tabla puente para SKU - codigo_alt - codigo_mongo
+2. Normalizacion de moneda: convertir CRC a USD con tabla de tipo de cambio
+3. Estandarizacion de genero: M/F, Masculino/Femenino, Otro/X -> valores unicos
+4. Conversion de fechas: castear VARCHAR a DATE/DATETIME
+5. Transformacion de totales: montos string -> decimal; montos enteros (CRC) -> decimal
 """
 import pandas as pd
 import numpy as np
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 class DataTransformer:
     """Transforma y normaliza datos según las 5 reglas de integración ETL"""
     
-    # REGLA 3: Mapeo de géneros (estandarización)
-    # Regla: M|Masculino → Masculino, F|Femenino → Femenino, X|Otro|NULL → No especificado
+    # REGLA 3: Mapeo de generos (estandarizacion)
+    # Regla: M|Masculino -> Masculino, F|Femenino -> Femenino, X|Otro|NULL -> No especificado
     GENDER_MAPPING = {
         'M': 'Masculino',
         'F': 'Femenino',
@@ -38,11 +38,11 @@ class DataTransformer:
     
     def transform_clientes(self, df_clientes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        REGLA 3: Estandarización de género
+        REGLA 3: Estandarizacion de genero
         Transforma clientes:
-        - M/Masculino → Masculino
-        - F/Femenino → Femenino
-        - X/Otro/NULL → No especificado
+        - M/Masculino -> Masculino
+        - F/Femenino -> Femenino
+        - X/Otro/NULL -> No especificado
         - Normaliza email
         - Convierte fecha a DATE
         - Agrega trazabilidad (source_key, source_system)
@@ -82,7 +82,7 @@ class DataTransformer:
             'registros_procesados': len(df)
         }
         
-        logger.info(f"✓ Clientes transformados: {len(df)}")
+        logger.info(f"[OK] Clientes transformados: {len(df)}")
         logger.info(f"  Géneros únicos: {df['gender'].unique()}")
         return df, tracking
     
@@ -107,7 +107,7 @@ class DataTransformer:
         df['Nombre'] = df['Nombre'].str.strip()
         
         # Normalizar categoría
-        df['Categoria'] = df['Categoria'].str.strip().upper()
+        df['Categoria'] = df['Categoria'].str.strip().str.upper()
         
         # Renombrar columnas
         df = df.rename(columns={
@@ -123,7 +123,7 @@ class DataTransformer:
             'registros_procesados': len(df)
         }
         
-        logger.info(f"✓ Productos transformados: {len(df)}")
+        logger.info(f"[OK] Productos transformados: {len(df)}")
         logger.info(f"  SKUs únicos: {df['code'].nunique()}")
         return df, tracking
     
@@ -131,7 +131,7 @@ class DataTransformer:
         """
         REGLA 2: Normalización de moneda (USD - MSSQL solo tiene USD)
         REGLA 4: Conversión de fechas VARCHAR a DATETIME
-        REGLA 5: Transformación de totales string → decimal
+        REGLA 5: Transformacion de totales string -> decimal
         """
         logger.info(f"Transformando {len(df_ordenes)} órdenes...")
         
@@ -144,7 +144,7 @@ class DataTransformer:
         # REGLA 4: Convertir fecha VARCHAR a DATETIME
         df['Fecha'] = pd.to_datetime(df['Fecha'])
         
-        # REGLA 5: Convertir total string → decimal
+        # REGLA 5: Convertir total string -> decimal
         df['Total'] = pd.to_numeric(df['Total'], errors='coerce')
         
         # Normalizar canal
@@ -153,7 +153,7 @@ class DataTransformer:
         # REGLA 2: Moneda siempre USD en MSSQL (validar homogeneidad)
         df['Moneda'] = df['Moneda'].fillna('USD')
         if (df['Moneda'] != 'USD').any():
-            logger.warning("⚠️ Se encontraron monedas diferentes a USD en MSSQL (debería ser homogénea)")
+            logger.warning("[WARN] Se encontraron monedas diferentes a USD en MSSQL (deberia ser homogenea)")
         
         # Validar totales
         df = df.dropna(subset=['Total'])
@@ -174,14 +174,14 @@ class DataTransformer:
             'registros_procesados': len(df)
         }
         
-        logger.info(f"✓ Órdenes transformadas: {len(df)}")
+        logger.info(f"[OK] Ordenes transformadas: {len(df)}")
         logger.info(f"  Moneda homogénea: USD")
         return df, tracking
     
     def transform_orden_detalle(self, df_detalle: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
         REGLA 5: Transformación de totales
-        - Convierte precios string → decimal
+        - Convierte precios string -> decimal
         - Valida cantidades > 0
         - Normaliza descuentos (0-100%)
         - Calcula línea total
@@ -194,7 +194,7 @@ class DataTransformer:
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['OrdenDetalleId'].astype(str)
         
-        # REGLA 5: Convertir precio string → decimal
+        # REGLA 5: Convertir precio string -> decimal
         df['PrecioUnit'] = pd.to_numeric(df['PrecioUnit'], errors='coerce')
         
         # Convertir cantidad
@@ -229,7 +229,7 @@ class DataTransformer:
             'total_usd_procesado': df['lineTotalUSD'].sum()
         }
         
-        logger.info(f"✓ Detalles transformados: {len(df)}")
+        logger.info(f"[OK] Detalles transformados: {len(df)}")
         logger.info(f"  Total USD procesado: ${df['lineTotalUSD'].sum():,.2f}")
         return df, tracking
     
@@ -240,7 +240,7 @@ class DataTransformer:
         categorias = df_productos[['categoryId']].drop_duplicates()
         categorias = categorias.rename(columns={'categoryId': 'name'})
         
-        logger.info(f"✓ Categorías extraídas: {len(categorias)}")
+        logger.info(f"[OK] Categorias extraidas: {len(categorias)}")
         return categorias
     
     def extract_canales(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
@@ -250,7 +250,7 @@ class DataTransformer:
         canales = df_ordenes[['channel']].drop_duplicates()
         canales = canales.rename(columns={'channel': 'name'})
         
-        logger.info(f"✓ Canales extraídos: {len(canales)}")
+        logger.info(f"[OK] Canales extraidos: {len(canales)}")
         return canales
     
     def generate_dimtime(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
@@ -274,7 +274,7 @@ class DataTransformer:
         
         dim_time['id'] = range(1, len(dim_time) + 1)
         
-        logger.info(f"✓ DimTime generada: {len(dim_time)} fechas")
+        logger.info(f"[OK] DimTime generada: {len(dim_time)} fechas")
         return dim_time[['id', 'year', 'month', 'day', 'date', 'exchangeRateToUSD']]
     
     def build_product_mapping(self, df_productos: pd.DataFrame) -> pd.DataFrame:
@@ -292,5 +292,5 @@ class DataTransformer:
             'descripcion': df_productos['name']
         })
         
-        logger.info(f"✓ Mapeo de {len(mapping)} productos generado")
+        logger.info(f"[OK] Mapeo de {len(mapping)} productos generado")
         return mapping
