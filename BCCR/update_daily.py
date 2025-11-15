@@ -1,25 +1,25 @@
+#!/usr/bin/env python3
 """
 Script para actualizar tipos de cambio diariamente a las 5 AM
-Diseñado para ejecutarse desde SQL Agent Job
+Diseñado para ejecutarse desde SQL Agent Job, cron, o Task Scheduler
 
 REGLA 2: Normalización de moneda - Actualización automática
 
-Para configurar en SQL Server:
-1. Ejecutar: MSSQL/etl/bccr_integration.py -> SQL_AGENT_JOB_SCRIPT
-2. El Job llamará a este script cada día a las 5 AM
-3. Descargará la tasa del día y la insertará en staging_tipo_cambio
+CONFIGURACIÓN:
+- Configurar connection string del DWH en la línea 28
+- Para SQL Agent Job: Ejecutar desde PowerShell o CmdExec
+- Para cron (Linux): 0 5 * * * python /ruta/a/update_daily.py
+- Para Task Scheduler (Windows): Diariamente a las 5:00 AM
 """
 import logging
 import sys
 from pathlib import Path
 from datetime import datetime
 
-# Agregar ruta del ETL
-sys.path.insert(0, str(Path(__file__).parent))
+# Agregar módulo BCCR al path
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from config import DatabaseConfig
-from load import DataLoader
-from bccr_integration import ExchangeRateService
+from bccr_integration import BCCRIntegration
 
 
 def setup_logging():
@@ -40,6 +40,38 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
+def get_dwh_loader():
+    """
+    IMPORTANTE: Cada equipo debe implementar su propio loader
+    Este es un ejemplo genérico. Ajustar según tu DWH.
+    
+    Returns:
+        Objeto con método load_staging_exchange_rates_dataframe(df)
+    """
+    # OPCIÓN 1: SQL Server (MSSQL)
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent / 'MSSQL' / 'etl'))
+        from config import DatabaseConfig
+        from load import DataLoader
+        loader = DataLoader(DatabaseConfig.get_dw_connection_string())
+        return loader
+    except Exception as e:
+        print(f"[WARNING] No se pudo cargar DataLoader de MSSQL: {e}")
+    
+    # OPCIÓN 2: MySQL
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent / 'MYSQL' / 'etl'))
+        from config import DatabaseConfig
+        from load import DataLoader
+        loader = DataLoader(DatabaseConfig.get_dw_connection_string())
+        return loader
+    except Exception as e:
+        print(f"[WARNING] No se pudo cargar DataLoader de MySQL: {e}")
+    
+    # OPCIÓN 3: Crear loader genérico aquí
+    raise Exception("No se encontró DataLoader. Configurar en get_dwh_loader()")
+
+
 def main():
     """Actualiza tasa de cambio del día"""
     logger = setup_logging()
@@ -50,13 +82,14 @@ def main():
     logger.info("=" * 80)
     
     try:
-        # Conectar DWH
-        logger.info("\n[1] Conectando a MSSQL_DW...")
-        loader = DataLoader(DatabaseConfig.get_dw_connection_string())
-        logger.info("[OK] Conexion exitosa")
+        # Obtener loader del DWH
+        logger.info("\n[1] Inicializando conexión al DWH...")
+        loader = get_dwh_loader()
+        logger.info("[OK] Conexión exitosa")
         
-        # Servicio de tasas
+        # Crear servicio BCCR
         logger.info("\n[2] Inicializando servicio BCCR...")
+        from bccr_integration import ExchangeRateService
         service = ExchangeRateService(loader)
         logger.info("[OK] Servicio inicializado")
         

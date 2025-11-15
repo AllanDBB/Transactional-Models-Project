@@ -15,6 +15,9 @@ from pathlib import Path
 # Agregar la carpeta del proyecto al path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Agregar módulo BCCR compartido
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'BCCR' / 'src'))
+
 from config import DatabaseConfig, ETLConfig
 from extract import DataExtractor
 from transform import DataTransformer

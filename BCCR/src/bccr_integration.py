@@ -4,6 +4,11 @@ Descarga tipos de cambio CRC -> USD desde el Banco Central de Costa Rica
 Permite cargar histórico de 3 años y actualizar diariamente a las 5 AM
 
 REGLA 2: Normalización de moneda
+
+USO DESDE OTROS ETLs:
+    from sys import path
+    path.insert(0, '../../BCCR/src')
+    from bccr_integration import ExchangeRateService, BCCRIntegration
 """
 import requests
 import pandas as pd
@@ -39,7 +44,7 @@ class BCCRIntegration:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'ETL-DWH-MSSQL/1.0'
+            'User-Agent': 'ETL-DWH-BCCR/1.0'
         })
     
     def get_exchange_rates_period(self, 
@@ -124,28 +129,6 @@ class BCCRIntegration:
             logger.error(f"[ERROR] Error obteniendo tasas BCCR: {str(e)}")
             raise
     
-    def _get_simulated_rate(self, fecha: datetime, from_currency: str, to_currency: str) -> float:
-        """
-        [DEPRECATED - Usar API real BCCR]
-        
-        Simula tasas BCCR (solo para desarrollo sin conexión real)
-        Ya no se usa - La clase ahora conecta con API real BCCR
-        """
-        logger.warning("[WARNING] Usando simulación (esta función está deprecada)")
-        logger.info("Para usar API real BCCR, verificar token y conectividad")
-        
-        base_rate = 520.0
-        day_factor = (fecha.toordinal() % 100) / 100.0
-        
-        if from_currency == 'CRC' and to_currency == 'USD':
-            rate = 1.0 / (base_rate + (day_factor * 50))
-        elif from_currency == 'USD' and to_currency == 'CRC':
-            rate = base_rate + (day_factor * 50)
-        else:
-            rate = 1.0
-        
-        return round(rate, 6)
-    
     def get_historical_rates(self, years_back: int = 3) -> pd.DataFrame:
         """
         REGLA 2: Obtiene histórico de tipos de cambio para los últimos N años
@@ -174,47 +157,6 @@ class BCCRIntegration:
         
         today = datetime.now()
         return self.get_exchange_rates_period(today, today, 'CRC', 'USD')
-    
-    @staticmethod
-    def call_bccr_real_api(token: str, 
-                           start_date: str, 
-                           end_date: str) -> Dict:
-        """
-        [DEPRECATED - Ya integrado en get_exchange_rates_period()]
-        
-        Llamada manual al API BCCR (sin necesidad de usar este método)
-        get_exchange_rates_period() ya lo hace automáticamente
-        
-        Args:
-            token: Token de autenticación BCCR (no usado, token global en clase)
-            start_date: Formato 'DD/MM/YYYY'
-            end_date: Formato 'DD/MM/YYYY'
-        
-        Returns:
-            Respuesta JSON del API
-        """
-        logger.warning("[WARNING] call_bccr_real_api está deprecated - usar get_exchange_rates_period()")
-        
-        endpoint = (
-            f"https://gee.bccr.fi.cr/Indicadores/Suscripciones/API/API_Token/"
-            f"consultaPublica/Indicador/318/"
-            f"FechaInicio/{start_date}/"
-            f"FechaFinal/{end_date}/"
-            f"Idioma/ESP"
-        )
-        
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json'
-        }
-        
-        try:
-            response = requests.get(endpoint, headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error llamando BCCR API: {str(e)}")
-            raise
 
 
 class ExchangeRateService:
@@ -293,125 +235,3 @@ class ExchangeRateService:
         except Exception as e:
             logger.error(f"Error actualizando tasa diaria: {str(e)}")
             return 0
-
-
-# ============================================================================
-# CONFIGURACIÓN PARA SQL AGENT JOB (Automatización en SQL Server)
-# ============================================================================
-
-SQL_AGENT_JOB_SCRIPT = """
--- ============================================================================
--- JOB SQL AGENT: Actualizar Tipos de Cambio BCCR diariamente a las 5 AM
--- ============================================================================
--- Crear Job (ejecutar como sa o usuario con permisos)
-
-USE msdb;
-GO
-
--- 1. Crear Schedule (todos los días a las 5 AM)
-EXEC msdb.dbo.sp_add_schedule
-    @schedule_name = 'Diario_5AM_TipoCambio',
-    @freq_type = 4,                    -- Diario
-    @freq_interval = 1,                -- Cada día
-    @active_start_time = 050000,       -- 05:00:00
-    @enabled = 1
-GO
-
--- 2. Crear Job
-EXEC msdb.dbo.sp_add_job
-    @job_name = 'Actualizar_TipoCambio_BCCR',
-    @enabled = 1,
-    @description = 'Actualiza tipos de cambio CRC->USD desde BCCR a las 5 AM'
-GO
-
--- 3. Agregar Step al Job (llamar Python ETL)
-EXEC msdb.dbo.sp_add_jobstep
-    @job_name = 'Actualizar_TipoCambio_BCCR',
-    @step_name = 'Ejecutar_BCCR_Update',
-    @subsystem = 'PowerShell',  -- O usar CmdExec si prefieres cmd
-    @command = 'python "C:\\Users\\Santiago Valverde\\Downloads\\University\\BD2\\Transactional-Models-Project\\MSSQL\\etl\\update_bccr_rates.py"',
-    @retry_attempts = 3,
-    @retry_interval = 5
-GO
-
--- 4. Vincular Schedule al Job
-EXEC msdb.dbo.sp_attach_schedule
-    @job_name = 'Actualizar_TipoCambio_BCCR',
-    @schedule_name = 'Diario_5AM_TipoCambio'
-GO
-
--- 5. Asignar servidor
-EXEC msdb.dbo.sp_add_jobserver
-    @job_name = 'Actualizar_TipoCambio_BCCR',
-    @server_name = N'(local)'
-GO
-
--- Verificar
-SELECT * FROM msdb.dbo.sysjobs WHERE name = 'Actualizar_TipoCambio_BCCR'
-SELECT * FROM msdb.dbo.sysjobschedules WHERE job_name = 'Actualizar_TipoCambio_BCCR'
-"""
-
-# ============================================================================
-# SCRIPT PYTHON PARA EJECUTAR DESDE JOB
-# ============================================================================
-
-PYTHON_JOB_SCRIPT = """
-#!/usr/bin/env python3
-\"\"\"
-Script para ejecutar actualización de tipos de cambio desde SQL Agent Job
-Ejecutarse diariamente a las 5 AM via msdb.sp_executesql
-\"\"\"
-import logging
-import sys
-from pathlib import Path
-
-# Agregar ruta del ETL
-sys.path.insert(0, str(Path(__file__).parent))
-
-from config import DatabaseConfig
-from load import DataLoader
-from bccr_integration import ExchangeRateService
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bccr_update.log'),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
-
-def main():
-    logger.info("=" * 80)
-    logger.info("INICIANDO ACTUALIZACIÓN DE TIPOS DE CAMBIO BCCR")
-    logger.info("=" * 80)
-    
-    try:
-        # Conectar DWH
-        loader = DataLoader(DatabaseConfig.get_dw_connection_string())
-        
-        # Servicio de tasas
-        service = ExchangeRateService(loader)
-        
-        # Actualizar tasa del día
-        inserted = service.update_daily_rates()
-        
-        if inserted > 0:
-            logger.info("[OK] Tasa del día actualizada correctamente")
-            sys.exit(0)
-        else:
-            logger.warning("[WARNING] No se pudo actualizar la tasa del día")
-            sys.exit(1)
-    
-    except Exception as e:
-        logger.error(f"[ERROR] Error en actualización BCCR: {str(e)}")
-        logger.exception("Traceback completo:")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-"""
-

@@ -12,6 +12,7 @@ Este proyecto incluye configuraciones Docker y ETLs para:
 - **Neo4j** - Base de datos de grafos
 - **PostgreSQL/Supabase** - Base de datos relacional avanzada
 - **ClickHouse (DWH)** - Data Warehouse para análisis OLAP
+- **BCCR** - Módulo compartido de integración con Banco Central de Costa Rica (tipos de cambio)
 
 ## 🏗️ Arquitectura
 
@@ -230,6 +231,26 @@ docker-compose up -d
 docker-compose logs --tail=100 -f <servicio>
 ```
 
+## 📊 Módulo BCCR (Compartido)
+
+El módulo de integración con el Banco Central de Costa Rica está centralizado en `/BCCR` para que **todos los ETLs** lo usen:
+
+- **Ubicación**: `/BCCR/src/bccr_integration.py`
+- **Documentación**: `/BCCR/README.md`
+- **Guía de integración**: `/BCCR/INTEGRACION.md`
+- **Ejemplo de uso**: `/BCCR/ejemplo_uso.py`
+
+**Uso desde cualquier ETL:**
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'BCCR' / 'src'))
+from bccr_integration import BCCRIntegration
+
+bccr = BCCRIntegration()
+df_tasas = bccr.get_historical_rates(years_back=3)
+```
+
 ## 📚 Recursos
 
 - [Docker Documentation](https://docs.docker.com/)
@@ -237,3 +258,4 @@ docker-compose logs --tail=100 -f <servicio>
 - [MySQL Docker Hub](https://hub.docker.com/_/mysql)
 - [Neo4j Docker Hub](https://hub.docker.com/_/neo4j)
 - [PostgreSQL Docker Hub](https://hub.docker.com/_/postgres)
+- [BCCR API Documentation](https://gee.bccr.fi.cr)
