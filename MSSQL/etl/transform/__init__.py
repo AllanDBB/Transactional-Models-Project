@@ -294,3 +294,105 @@ class DataTransformer:
         
         logger.info(f"[OK] Mapeo de {len(mapping)} productos generado")
         return mapping
+    
+    def build_fact_sales(self, df_detalles: pd.DataFrame, df_ordenes: pd.DataFrame,
+                        df_productos: pd.DataFrame, df_clientes: pd.DataFrame,
+                        dw_connection_string: str) -> pd.DataFrame:
+        """
+        Construye FactSales con FKs a las dimensiones del DWH
+        
+        Args:
+            df_detalles: DataFrame con detalles transformados
+            df_ordenes: DataFrame con órdenes transformadas
+            df_productos: DataFrame con productos transformados (para mapear code)
+            df_clientes: DataFrame con clientes transformados (para mapear email)
+            dw_connection_string: Conexión al DWH para obtener IDs de dimensiones
+        
+        Returns:
+            DataFrame listo para cargar en FactSales
+        """
+        import pyodbc
+        
+        logger.info(f"Construyendo FactSales con {len(df_detalles)} registros...")
+        
+        # Hacer JOIN con órdenes para obtener customerId, channelId, date
+        df_fact = df_detalles.merge(
+            df_ordenes[['id', 'customerId', 'channel', 'date']],
+            left_on='orderId',
+            right_on='id',
+            suffixes=('', '_orden')
+        )
+        
+        # Agregar email de clientes
+        df_fact = df_fact.merge(
+            df_clientes[['id', 'email']],
+            left_on='customerId',
+            right_on='id',
+            suffixes=('', '_cliente')
+        )
+        
+        # Agregar code (SKU) de productos
+        df_fact = df_fact.merge(
+            df_productos[['id', 'code']],
+            left_on='productId',
+            right_on='id',
+            suffixes=('', '_producto')
+        )
+        
+        # Conectar al DWH para mapear IDs
+        conn = pyodbc.connect(dw_connection_string)
+        cursor = conn.cursor()
+        
+        # Mapear code → DimProduct.id
+        cursor.execute("SELECT id, code FROM DimProduct")
+        product_map = {code: id for id, code in cursor.fetchall()}
+        
+        # Mapear email → DimCustomer.id
+        cursor.execute("SELECT id, email FROM DimCustomer")
+        customer_map = {email: id for id, email in cursor.fetchall()}
+        
+        # Mapear channel → DimChannel.id
+        cursor.execute("SELECT id, name FROM DimChannel")
+        channel_map = {name: id for id, name in cursor.fetchall()}
+        
+        # Mapear date → DimTime.id
+        cursor.execute("SELECT id, date FROM DimTime")
+        time_map = {str(date): id for id, date in cursor.fetchall()}
+        
+        cursor.close()
+        conn.close()
+        
+        # Aplicar mapeos
+        df_fact['productId_dwh'] = df_fact['code'].map(product_map)
+        df_fact['customerId_dwh'] = df_fact['email'].map(customer_map)
+        df_fact['channelId'] = df_fact['channel'].map(channel_map)
+        df_fact['timeId'] = df_fact['date'].astype(str).map(time_map)
+        
+        # Crear orderId secuencial (DimOrder ya se cargó)
+        df_fact = df_fact.sort_values('orderId')
+        orden_ids_unicos = df_fact['orderId'].unique()
+        orden_id_map = {old_id: new_id for new_id, old_id in enumerate(orden_ids_unicos, start=1)}
+        df_fact['orderId_dwh'] = df_fact['orderId'].map(orden_id_map)
+        
+        # Preparar DataFrame final
+        from datetime import datetime
+        import numpy as np
+        df_fact_final = pd.DataFrame({
+            'productId': df_fact['productId_dwh'],
+            'timeId': df_fact['timeId'],
+            'orderId': df_fact['orderId_dwh'],
+            'channelId': df_fact['channelId'],
+            'customerId': df_fact['customerId_dwh'],
+            'productCant': df_fact['productCant'],
+            'productUnitPriceUSD': df_fact['productUnitPriceUSD'],
+            'lineTotalUSD': df_fact['lineTotalUSD'],
+            'discountPercentage': df_fact['discountPercentage'],
+            'created_at': datetime.now(),
+            'exchangeRateId': np.nan  # NULL en SQL (MSSQL no usa conversión, siempre USD)
+        })
+        
+        # Eliminar registros con FKs nulas
+        df_fact_final = df_fact_final.dropna(subset=['productId', 'customerId', 'channelId', 'timeId'])
+        
+        logger.info(f"[OK] FactSales construido: {len(df_fact_final)} registros válidos")
+        return df_fact_final

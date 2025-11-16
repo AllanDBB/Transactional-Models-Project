@@ -5,7 +5,7 @@
 -- - Clientes: 600
 -- - Productos: 5000
 -- - Órdenes: 5000
--- - Detalles: ~15000-25000 (2-5 items por orden)
+-- - Detalles: 17,500 (promedio 3.5 items por orden, range 2-5)
 -- - Fechas: 2024-01-01 a 2025-11-15
 -- - Monedas: USD (todos, BD MSSQL es en USD)
 -- - Canales: WEB, TIENDA, APP
@@ -42,30 +42,30 @@ DBCC CHECKIDENT ('sales_ms.OrdenDetalle', RESEED, 0) WITH NO_INFOMSGS;
 
 GO
 
--- Tabla auxiliar con nombres y países
-DECLARE @Clientes TABLE (
+-- Tabla con nombres reales
+DECLARE @NombresBase TABLE (
+    RowNum INT IDENTITY(1,1),
     Nombre NVARCHAR(120),
-    Pais NVARCHAR(60)
+    Genero NVARCHAR(12)
 );
 
--- Insertar 600 clientes con variedad de nombres y países
-INSERT INTO @Clientes VALUES 
-('Juan García', 'Costa Rica'), ('María López', 'Costa Rica'), ('Carlos Rodríguez', 'Costa Rica'), 
-('Ana Martínez', 'Costa Rica'), ('Pedro Sánchez', 'Costa Rica'), ('Laura Hernández', 'Costa Rica'),
-('Miguel Flores', 'Costa Rica'), ('Isabel Mora', 'Costa Rica'), ('Diego Ramírez', 'Costa Rica'),
-('Elena Vega', 'Costa Rica'), ('Antonio Díaz', 'Costa Rica'), ('Rosa Jiménez', 'Costa Rica'),
-('Fernando Acosta', 'Costa Rica'), ('Sofía Campos', 'Costa Rica'), ('Raúl Ortiz', 'Costa Rica'),
-('Gabriela Brenes', 'Costa Rica'), ('Andrés Castro', 'Costa Rica'), ('Patricia Solís', 'Costa Rica'),
-('Ricardo Medina', 'Costa Rica'), ('Cristina Arias', 'Costa Rica'), ('Julio Delgado', 'Costa Rica'),
-('Sandra Vargas', 'Costa Rica'), ('Hector Zamora', 'Costa Rica'), ('Verónica Segura', 'Costa Rica'),
-('Eduardo Navarro', 'Costa Rica'), ('Margarita Rojas', 'Costa Rica'), ('Sergio Quirós', 'Costa Rica'),
-('Beatriz Reyes', 'Costa Rica'), ('Javier Montoya', 'Costa Rica'), ('Dolores Aguilar', 'Costa Rica'),
-('Samuel Vindas', 'Costa Rica'), ('Catalina Chaves', 'Costa Rica'), ('Vicente Gómez', 'Costa Rica'),
-('Marta Durán', 'Costa Rica'), ('Bonifacio Araya', 'Costa Rica'), ('Lorena Espinoza', 'Costa Rica'),
-('Octavio Paniagua', 'Costa Rica'), ('Valentina Soto', 'Costa Rica'), ('Gustavo Benavides', 'Costa Rica'),
-('Adriana Salazar', 'Costa Rica'), ('Leopoldo Cordero', 'Costa Rica'), ('Pilar González', 'Costa Rica');
+INSERT INTO @NombresBase (Nombre, Genero) VALUES 
+('Juan García', 'Masculino'), ('María López', 'Femenino'), ('Carlos Rodríguez', 'Masculino'), 
+('Ana Martínez', 'Femenino'), ('Pedro Sánchez', 'Masculino'), ('Laura Hernández', 'Femenino'),
+('Miguel Flores', 'Masculino'), ('Isabel Mora', 'Femenino'), ('Diego Ramírez', 'Masculino'),
+('Elena Vega', 'Femenino'), ('Antonio Díaz', 'Masculino'), ('Rosa Jiménez', 'Femenino'),
+('Fernando Acosta', 'Masculino'), ('Sofía Campos', 'Femenino'), ('Raúl Ortiz', 'Masculino'),
+('Gabriela Brenes', 'Femenino'), ('Andrés Castro', 'Masculino'), ('Patricia Solís', 'Femenino'),
+('Ricardo Medina', 'Masculino'), ('Cristina Arias', 'Femenino'), ('Julio Delgado', 'Masculino'),
+('Sandra Vargas', 'Femenino'), ('Hector Zamora', 'Masculino'), ('Verónica Segura', 'Femenino'),
+('Eduardo Navarro', 'Masculino'), ('Margarita Rojas', 'Femenino'), ('Sergio Quirós', 'Masculino'),
+('Beatriz Reyes', 'Femenino'), ('Javier Montoya', 'Masculino'), ('Dolores Aguilar', 'Femenino'),
+('Samuel Vindas', 'Masculino'), ('Catalina Chaves', 'Femenino'), ('Vicente Gómez', 'Masculino'),
+('Marta Durán', 'Femenino'), ('Bonifacio Araya', 'Masculino'), ('Lorena Espinoza', 'Femenino'),
+('Octavio Paniagua', 'Masculino'), ('Valentina Soto', 'Femenino'), ('Gustavo Benavides', 'Masculino'),
+('Adriana Salazar', 'Femenino'), ('Leopoldo Cordero', 'Masculino'), ('Pilar González', 'Femenino');
 
--- Generar 600 clientes usando números y combinaciones
+-- Generar 600 clientes reutilizando los 42 nombres (42 × 15 = 630, usamos 600)
 ;WITH NumberSequence AS (
     SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Num
     FROM (
@@ -81,12 +81,17 @@ INSERT INTO @Clientes VALUES
 )
 INSERT INTO sales_ms.Cliente (Nombre, Email, Genero, Pais, FechaRegistro)
 SELECT 
-    'Cliente_' + FORMAT(Num, '000'),
-    'cliente' + FORMAT(Num, '000') + '@example.com',
-    CASE WHEN Num % 2 = 0 THEN 'Masculino' ELSE 'Femenino' END,
+    N.Nombre,
+    LOWER(REPLACE(N.Nombre, ' ', '.')) + CAST(Num AS NVARCHAR(10)) + '@example.com',
+    N.Genero,
     CASE WHEN Num % 3 = 0 THEN 'Panamá' WHEN Num % 3 = 1 THEN 'Nicaragua' ELSE 'Costa Rica' END,
     DATEADD(DAY, -(ABS(CHECKSUM(Num)) % 365), CAST(GETDATE() AS DATE))
 FROM NumberSequence
+CROSS APPLY (
+    SELECT Nombre, Genero 
+    FROM @NombresBase 
+    WHERE RowNum = ((Num - 1) % 42) + 1
+) N
 WHERE Num <= 600;
 
 

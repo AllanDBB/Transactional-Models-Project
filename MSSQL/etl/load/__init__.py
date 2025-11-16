@@ -284,6 +284,8 @@ class DataLoader:
     @staticmethod
     def _format_value(value) -> str:
         """Formatea valores para SQL"""
+        from datetime import datetime, date
+        
         if pd.isna(value):
             return "NULL"
         elif isinstance(value, str):
@@ -294,6 +296,12 @@ class DataLoader:
             return "1" if value else "0"
         elif isinstance(value, (int, float)):
             return str(value)
+        elif isinstance(value, (datetime, date)):
+            # Formato ISO para SQL Server: 'YYYY-MM-DD HH:MM:SS'
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+        elif isinstance(value, pd.Timestamp):
+            # Pandas Timestamp
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
         else:
             escaped = str(value).replace("'", "''")
             return f"'{escaped}'"

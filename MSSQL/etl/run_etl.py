@@ -127,6 +127,21 @@ def run_etl():
         loader.load_dim_time(dim_time)
         loader.load_dim_product(productos_trans, category_map)
         
+        # Cargar DimOrder (antes de FactSales)
+        logger.info("\n[Cargando DimOrder]")
+        loader.load_dim_order(ordenes_trans)
+        
+        # Construir y cargar FactSales (tabla de hechos)
+        logger.info("\n[Construyendo FactSales]")
+        fact_sales = transformer.build_fact_sales(
+            detalle_trans, 
+            ordenes_trans,
+            productos_trans,
+            clientes_trans,
+            DatabaseConfig.get_dw_connection_string()
+        )
+        loader.load_fact_sales(fact_sales)
+        
         # Cargar tablas de staging (5 reglas)
         logger.info("\n[Cargando Tablas de Staging - 5 Reglas]")
         
@@ -150,7 +165,7 @@ def run_etl():
         logger.info(f"  [OK] Clientes: {len(clientes_trans)}")
         logger.info(f"  [OK] Productos: {len(productos_trans)}")
         logger.info(f"  [OK] Ordenes: {len(ordenes_trans)}")
-        logger.info(f"  [OK] Detalles: {len(detalle_trans)}")
+        logger.info(f"  [OK] FactSales: {len(fact_sales)}")
         logger.info(f"  [OK] Mapeos (REGLA 1): {len(product_mapping)}")
         logger.info("\n[REGLAS APLICADAS]")
         logger.info("  [OK] REGLA 1: Homologacion de productos (SKU - codigo_alt - codigo_mongo)")
