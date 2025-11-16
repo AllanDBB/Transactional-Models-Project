@@ -56,8 +56,9 @@ class DataLoader:
             
             for idx, row in df_mapping.iterrows():
                 sql = f"""
-                    INSERT INTO staging_map_producto (source_system, source_code, sku_oficial, descripcion)
-                    VALUES ('{row['source_system']}', '{row['source_code']}', '{row['sku_oficial']}', '{row['descripcion']}')
+                    INSERT INTO staging_map_producto (source_system, source_code, sku_oficial, descripcion, created_at)
+                    VALUES ('{row['source_system']}', '{row['source_code']}', '{row['sku_oficial']}', '{row['descripcion']}', 
+                            DATEADD(HOUR, -6, GETDATE()))
                 """
                 cursor.execute(sql)
             
@@ -243,8 +244,9 @@ class DataLoader:
             for idx, row in df_source.iterrows():
                 if 'source_system' in row and 'source_key' in row:
                     sql = f"""
-                        INSERT INTO staging_source_tracking (source_system, source_key, tabla_destino, id_destino)
-                        VALUES ('{row['source_system']}', '{row['source_key']}', '{tabla}', {row['id']})
+                        INSERT INTO staging_source_tracking (source_system, source_key, tabla_destino, id_destino, created_at)
+                        VALUES ('{row['source_system']}', '{row['source_key']}', '{tabla}', {row['id']}, 
+                                DATEADD(HOUR, -6, GETDATE()))
                     """
                     cursor.execute(sql)
             

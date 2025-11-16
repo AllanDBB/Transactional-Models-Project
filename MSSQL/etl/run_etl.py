@@ -97,15 +97,17 @@ def run_etl():
         loader = DataLoader(DatabaseConfig.get_dw_connection_string())
         
         # Limpiar tablas
-        tables_to_truncate = [
-            'DimCategory',
-            'DimChannel',
-            'DimProduct',
-            'DimCustomer',
-            'DimTime',
-            'FactSales'
-        ]
-        loader.truncate_tables(tables_to_truncate)
+        # NOTA: Comentado para permitir cargas incrementales
+        # Solo usa limpiar_todo.py cuando necesites resetear el DWH completamente
+        # tables_to_truncate = [
+        #     'DimCategory',
+        #     'DimChannel',
+        #     'DimProduct',
+        #     'DimCustomer',
+        #     'DimTime',
+        #     'FactSales'
+        # ]
+        # loader.truncate_tables(tables_to_truncate)
         
         # Cargar dimensiones
         logger.info("\n[Cargando Dimensiones]")
