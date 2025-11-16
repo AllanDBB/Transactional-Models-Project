@@ -2,22 +2,30 @@
 -- 02-insert_test_data.sql
 -- Insertar datos de prueba en BD Transaccional MSSQL
 -- ============================================================================
--- Objetivo: Generar volumen realista para ETL
 -- - Clientes: 600
--- - Productos: 100
--- - Órdenes: 1000
--- - Detalles: ~3000-4000 (múltiples items por orden)
+-- - Productos: 5000
+-- - Órdenes: 5000
+-- - Detalles: ~15000-25000 (2-5 items por orden)
 -- - Fechas: 2024-01-01 a 2025-11-15
 -- - Monedas: USD (todos, BD MSSQL es en USD)
 -- - Canales: WEB, TIENDA, APP
+--
+-- ¿Qué son los DETALLES?
+-- Cada ORDEN puede tener múltiples productos (líneas de detalle).
+-- Ejemplo: Orden #1 tiene 3 detalles:
+--   - Detalle 1: 2 Laptops × $1200 = $2400
+--   - Detalle 2: 1 Mouse × $25 = $25
+--   - Detalle 3: 3 Teclados × $80 = $240
+--   Total Orden: $2665
 -- ============================================================================
 
 USE SalesDB_MSSQL;
 GO
 
-PRINT '========================================';
-PRINT 'LIMPIANDO DATOS EXISTENTES...';
-PRINT '========================================';
+-- Deshabilitar mensajes de filas afectadas
+SET NOCOUNT ON;
+GO
+
 
 -- Limpiar datos existentes (mantener estructura)
 DELETE FROM sales_ms.OrdenDetalle;
@@ -26,16 +34,13 @@ DELETE FROM sales_ms.Producto;
 DELETE FROM sales_ms.Cliente;
 
 -- Resetear identidades
-DBCC CHECKIDENT ('sales_ms.Cliente', RESEED, 0);
-DBCC CHECKIDENT ('sales_ms.Producto', RESEED, 0);
-DBCC CHECKIDENT ('sales_ms.Orden', RESEED, 0);
-DBCC CHECKIDENT ('sales_ms.OrdenDetalle', RESEED, 0);
+DBCC CHECKIDENT ('sales_ms.Cliente', RESEED, 0) WITH NO_INFOMSGS;
+DBCC CHECKIDENT ('sales_ms.Producto', RESEED, 0) WITH NO_INFOMSGS;
+DBCC CHECKIDENT ('sales_ms.Orden', RESEED, 0) WITH NO_INFOMSGS;
+DBCC CHECKIDENT ('sales_ms.OrdenDetalle', RESEED, 0) WITH NO_INFOMSGS;
+
 
 GO
-
-PRINT '========================================';
-PRINT 'INSERTANDO 600 CLIENTES...';
-PRINT '========================================';
 
 -- Tabla auxiliar con nombres y países
 DECLARE @Clientes TABLE (
@@ -84,13 +89,8 @@ SELECT
 FROM NumberSequence
 WHERE Num <= 600;
 
-PRINT 'Clientes insertados: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 GO
-
-PRINT '========================================';
-PRINT 'INSERTANDO 5000 PRODUCTOS...';
-PRINT '========================================';
 
 -- Insertar 5000 productos con categorías variadas
 ;WITH ProductoNumbers AS (
@@ -127,17 +127,11 @@ SELECT
 FROM ProductoNumbers
 WHERE Num <= 5000;
 
-PRINT 'Productos insertados: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
-
 GO
-
-PRINT '========================================';
-PRINT 'INSERTANDO 1000 ÓRDENES CON DETALLES...';
-PRINT '========================================';
 
 -- Variables para control
 DECLARE @OrdenActual INT = 1;
-DECLARE @MaxOrdenes INT = 1000;
+DECLARE @MaxOrdenes INT = 5000;
 DECLARE @ClienteId INT;
 DECLARE @ProductoId INT;
 DECLARE @Cantidad INT;
@@ -162,7 +156,7 @@ DECLARE @OrdenesTmp TABLE (
     Total DECIMAL(18,2)
 );
 
--- Generar 1000 órdenes
+-- Generar 5000 órdenes (10 × 10 × 10 × 5 = 5000)
 ;WITH OrderNumbers AS (
     SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Num
     FROM (
@@ -173,8 +167,7 @@ DECLARE @OrdenesTmp TABLE (
      UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t2,
     (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
      UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t3,
-    (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
-     UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t4
+    (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) t4
 )
 INSERT INTO @OrdenesTmp
 SELECT 
@@ -183,16 +176,14 @@ SELECT
     CASE WHEN (Num % 3) = 0 THEN 'WEB' WHEN (Num % 3) = 1 THEN 'TIENDA' ELSE 'APP' END AS Canal,
     CAST(ABS(CHECKSUM(Num)) % 5000 * 0.01 AS DECIMAL(18,2)) + 10 AS Total
 FROM OrderNumbers
-WHERE Num <= 1000;
+WHERE Num <= 5000;
 
 -- Insertar órdenes
 INSERT INTO sales_ms.Orden (ClienteId, Fecha, Canal, Moneda, Total)
 SELECT ClienteId, Fecha, Canal, 'USD', Total
 FROM @OrdenesTmp;
 
-PRINT 'Órdenes insertadas: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
-
--- Insertar detalles de órdenes (3-5 items por orden)
+-- Insertar detalles de órdenes (2-5 items por orden)
 DECLARE @OrdenId INT = 1;
 DECLARE @MaxOrdenId INT;
 
@@ -228,49 +219,23 @@ BEGIN
     SET @OrdenId = @OrdenId + 1;
 END;
 
-PRINT 'Detalles insertados: ' + CAST(@DetallesCount AS NVARCHAR(10));
-
 GO
 
-PRINT '========================================';
-PRINT 'VALIDACIÓN DE DATOS...';
-PRINT '========================================';
-
--- Validar datos insertados
-SELECT 
-    (SELECT COUNT(*) FROM sales_ms.Cliente) AS TotalClientes,
-    (SELECT COUNT(*) FROM sales_ms.Producto) AS TotalProductos,
-    (SELECT COUNT(*) FROM sales_ms.Orden) AS TotalOrdenes,
-    (SELECT COUNT(*) FROM sales_ms.OrdenDetalle) AS TotalDetalles;
-
-PRINT '';
-PRINT 'Clientes por género:';
-SELECT Genero, COUNT(*) AS Cantidad FROM sales_ms.Cliente GROUP BY Genero;
-
-PRINT '';
-PRINT 'Productos por categoría:';
-SELECT Categoria, COUNT(*) AS Cantidad FROM sales_ms.Producto GROUP BY Categoria;
-
-PRINT '';
-PRINT 'Órdenes por canal:';
-SELECT Canal, COUNT(*) AS Cantidad FROM sales_ms.Orden GROUP BY Canal;
-
-PRINT '';
-PRINT 'Rango de fechas:';
-SELECT 
-    MIN(Fecha) AS FechaMinima,
-    MAX(Fecha) AS FechaMaxima
-FROM sales_ms.Orden;
-
-PRINT '';
-PRINT 'Estadísticas de totales:';
-SELECT 
-    MIN(Total) AS TotalMinimo,
-    MAX(Total) AS TotalMaximo,
-    AVG(Total) AS PromedioTotal
-FROM sales_ms.Orden;
-
 PRINT '';
 PRINT '========================================';
-PRINT 'DATOS INSERTADOS EXITOSAMENTE';
+PRINT 'RESUMEN FINAL';
 PRINT '========================================';
+
+DECLARE @TotalClientes INT, @TotalProductos INT, @TotalOrdenes INT, @TotalDetalles INT;
+SELECT @TotalClientes = COUNT(*) FROM sales_ms.Cliente;
+SELECT @TotalProductos = COUNT(*) FROM sales_ms.Producto;
+SELECT @TotalOrdenes = COUNT(*) FROM sales_ms.Orden;
+SELECT @TotalDetalles = COUNT(*) FROM sales_ms.OrdenDetalle;
+
+PRINT 'Clientes:  ' + CAST(@TotalClientes AS NVARCHAR(10));
+PRINT 'Productos: ' + CAST(@TotalProductos AS NVARCHAR(10));
+PRINT 'Órdenes:   ' + CAST(@TotalOrdenes AS NVARCHAR(10));
+PRINT 'Detalles:  ' + CAST(@TotalDetalles AS NVARCHAR(10));
+PRINT '========================================';
+
+SET NOCOUNT OFF;

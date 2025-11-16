@@ -29,45 +29,118 @@ Cada base de datos es **completamente independiente** con su propio:
 ### Prerrequisitos
 - Docker Desktop instalado
 - Docker Compose v2.0 o superior
+- Python 3.10+ instalado
 - Mínimo 8GB RAM disponible
 
 ### Configuración Inicial
 
-1. **Clonar variables de entorno**
+#### 1. Configurar Entorno Virtual Python
+
+**Windows (PowerShell):**
+```powershell
+# Crear entorno virtual
+python -m venv .venv
+
+# Activar entorno virtual
+.\.venv\Scripts\Activate.ps1
+
+# Si hay error de políticas de ejecución:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Linux/Mac:**
+```bash
+# Crear entorno virtual
+python3 -m venv .venv
+
+# Activar entorno virtual
+source .venv/bin/activate
+```
+
+#### 2. Instalar Dependencias Python
+
+```powershell
+# Dependencias generales
+pip install pyodbc python-dotenv pandas requests
+
+# Para MSSQL específicamente
+cd MSSQL/etl
+pip install -r requirements.txt
+```
+
+#### 3. Configurar Variables de Entorno
+
 ```bash
 cp .env.example .env
 ```
 
-2. **Editar credenciales** (opcional)
-Modifica el archivo `.env` con tus credenciales personalizadas.
+Edita el archivo `.env` con tus credenciales personalizadas.
 
-3. **Iniciar todos los servicios**
+#### 4. Iniciar Bases de Datos con Docker
+
+**Iniciar todos los servicios:**
 ```bash
 docker-compose up -d
 ```
 
-4. **Iniciar servicios específicos**
+**Iniciar servicios específicos:**
 ```bash
+# Solo MSSQL (Transaccional + DWH)
+cd MSSQL
+docker-compose up -d
+
 # Solo MongoDB
-docker-compose up -d mongodb mongo-express
+cd MONGODB
+docker-compose up -d
 
 # Solo MySQL
-docker-compose up -d mysql phpmyadmin
-
-# Solo MSSQL
-docker-compose up -d mssql
+cd MYSQL
+docker-compose up -d
 
 # Solo Neo4j
-docker-compose up -d neo4j
+cd NEO4J
+docker-compose up -d
 
-# Solo PostgreSQL
-docker-compose up -d postgres pgadmin
+# Solo PostgreSQL/Supabase
+cd SUPABASE
+docker-compose up -d
 
 # Solo ClickHouse (DWH)
-docker-compose up -d clickhouse
+cd DWH
+docker-compose up -d
+```
+
+#### 5. Inicializar Datos y Ejecutar ETL
+
+**Para MSSQL:**
+```powershell
+# 1. Ejecuta 01-init.sql en SSMS para crear tablas
+# 2. Ejecuta 02-insert_test_data.sql para insertar 600 clientes, 5000 productos, 1000 órdenes
+
+# 3. Ejecutar ETL
+cd MSSQL\etl
+python run_etl.py
+
+# 4. (Opcional) Limpiar todo y empezar de nuevo
+python limpiar_todo.py
 ```
 
 ## 📦 Servicios Disponibles
+
+### MS SQL Server (Transaccional)
+- **Puerto**: 1433
+- **Base de datos**: SalesDB_MSSQL
+- **Credenciales**: sa/YourStrong@Passw0rd
+- **Conexión**: `localhost:1433`
+- **Schema**: `sales_ms` (Cliente, Producto, Orden, OrdenDetalle)
+
+### MS SQL Server (DWH - Data Warehouse)
+- **Puerto**: 1434
+- **Base de datos**: MSSQL_DW
+- **Credenciales**: sa/YourStrong@Passw0rd
+- **Conexión**: `192.168.100.50:1434` (red Docker)
+- **Tablas**: DimCustomer, DimProduct, DimCategory, DimChannel, DimTime, FactSales
+- **Staging**: staging_map_producto, staging_tipo_cambio, staging_source_tracking
 
 ### MongoDB
 - **Puerto**: 27017
@@ -78,10 +151,6 @@ docker-compose up -d clickhouse
 - **Puerto**: 3306
 - **GUI**: http://localhost:8082 (phpMyAdmin)
 - **Credenciales**: user/user123
-
-### MS SQL Server
-- **Puerto**: 1433
-- **Credenciales**: sa/YourStrong@Password123
 
 ### Neo4j
 - **Puerto HTTP**: 7474
@@ -104,16 +173,37 @@ docker-compose up -d clickhouse
 
 ## 🛠️ Comandos Útiles
 
-### Ver logs
+### Entorno Virtual Python
+
+```powershell
+# Activar entorno (Windows)
+.\.venv\Scripts\Activate.ps1
+
+# Activar entorno (Linux/Mac)
+source .venv/bin/activate
+
+# Desactivar
+deactivate
+
+# Verificar Python activo
+python --version
+which python  # Linux/Mac
+Get-Command python  # Windows PowerShell
+```
+
+### Docker
+
+**Ver logs:**
 ```bash
 # Todos los servicios
 docker-compose logs -f
 
 # Servicio específico
-docker-compose logs -f mongodb
+docker-compose logs -f mssql
+docker-compose logs -f mssql-dwh
 ```
 
-### Detener servicios
+**Detener servicios:**
 ```bash
 # Todos
 docker-compose down
@@ -122,21 +212,24 @@ docker-compose down
 docker-compose down -v
 ```
 
-### Reiniciar servicio
+**Reiniciar servicio:**
 ```bash
-docker-compose restart mongodb
+docker-compose restart mssql
 ```
 
-### Acceder a un contenedor
+**Acceder a contenedores:**
 ```bash
+# MSSQL Transaccional
+docker exec -it mssql-transactional /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd
+
+# MSSQL DWH
+docker exec -it mssql-dwh /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd
+
 # MongoDB
 docker exec -it transactional-mongodb mongosh
 
 # MySQL
 docker exec -it transactional-mysql mysql -u root -p
-
-# MSSQL
-docker exec -it transactional-mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Password123
 
 # Neo4j
 docker exec -it transactional-neo4j cypher-shell -u neo4j -p password123
@@ -145,9 +238,27 @@ docker exec -it transactional-neo4j cypher-shell -u neo4j -p password123
 docker exec -it transactional-postgres psql -U postgres
 ```
 
-### Ver estado de servicios
+**Ver estado:**
 ```bash
 docker-compose ps
+docker ps -a
+```
+
+### ETL (MSSQL)
+
+```powershell
+# Activar entorno
+cd MSSQL\etl
+.\.venv\Scripts\Activate.ps1
+
+# Ejecutar ETL
+python run_etl.py
+
+# Limpiar DWH y BD transaccional
+python limpiar_todo.py
+
+# Ver estructura final
+cat ESTRUCTURA_FINAL.md
 ```
 
 ## 📁 Estructura del Proyecto

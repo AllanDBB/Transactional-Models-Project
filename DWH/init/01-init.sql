@@ -51,6 +51,7 @@ CREATE TABLE staging_map_producto (
     source_code NVARCHAR(100) NOT NULL,            -- codigo_alt, codigo_mongo, etc
     sku_oficial NVARCHAR(40) NOT NULL,             -- SKU único en el DWH
     descripcion NVARCHAR(200),
+    created_at DATETIME DEFAULT GETDATE(),         -- fecha de creación (zona horaria ajustada desde ETL)
     fecha_mapeo DATETIME DEFAULT GETDATE(),
     activo BIT DEFAULT 1,
     CONSTRAINT unique_map UNIQUE (source_system, source_code)
@@ -81,6 +82,7 @@ CREATE TABLE staging_source_tracking (
     source_key NVARCHAR(100) NOT NULL,             -- ID original en sistema fuente
     tabla_destino NVARCHAR(50) NOT NULL,           -- 'DimCustomer', 'FactSales', etc
     id_destino INT NOT NULL,                       -- ID en tabla destino del DWH
+    created_at DATETIME DEFAULT GETDATE(),         -- fecha de creación (zona horaria ajustada desde ETL)
     fecha_carga DATETIME DEFAULT GETDATE(),
     estado NVARCHAR(20) DEFAULT 'ACTIVO',          -- 'ACTIVO', 'INACTIVO', 'ERROR'
     CONSTRAINT unique_source_key UNIQUE (source_system, source_key, tabla_destino)
