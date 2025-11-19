@@ -1,11 +1,15 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const path = require('path');
 
 const app = express();
-app.use(express.json()); 
+app.use(express.json());
 
-// Conexión a MongoDB
+const staticDir = path.join(__dirname, '..', '..', 'client', 'public');
+app.use(express.static(staticDir));
+
+// Conexion a MongoDB
 const uri = process.env.MONGODB_URI;
 mongoose.connect(uri)
   .then(() => console.log('MongoDB conectada'))

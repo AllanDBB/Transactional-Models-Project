@@ -1,0 +1,339 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
+
+:root {
+    --bg: #0f172a;
+    --card: #111827;
+    --muted: #94a3b8;
+    --text: #e2e8f0;
+    --primary: #22d3ee;
+    --primary-strong: #06b6d4;
+    --danger: #f87171;
+    --surface: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.08);
+    --radius: 12px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+    background: radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.12), transparent 25%),
+                radial-gradient(circle at 80% 0%, rgba(94, 234, 212, 0.15), transparent 30%),
+                var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+.page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+}
+
+.hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.kicker {
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 6px 0;
+}
+
+h1 {
+    margin: 0 0 8px 0;
+    font-weight: 600;
+}
+
+.subtitle {
+    margin: 0;
+    color: var(--muted);
+}
+
+.hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.card h2 {
+    margin: 0 0 4px 0;
+}
+
+.hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+input, select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 15px;
+}
+
+select {
+    appearance: none;
+    background-color: #0c1427;
+    border: 1px solid var(--primary);
+    color: var(--text);
+    padding-right: 38px;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--primary) 50%),
+        linear-gradient(135deg, var(--primary) 50%, transparent 50%),
+        linear-gradient(90deg, var(--primary), var(--primary));
+    background-position:
+        calc(100% - 24px) calc(50% - 4px),
+        calc(100% - 18px) calc(50% - 4px),
+        calc(100% - 21px) 50%;
+    background-size: 8px 8px, 8px 8px, 1px 18px;
+    background-repeat: no-repeat;
+}
+
+select option {
+    background: #0b1224;
+    color: var(--text);
+}
+
+select::-ms-expand {
+    display: none;
+}
+
+input:focus, select:focus {
+    outline: 1px solid var(--primary);
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #0b1224;
+    background: var(--primary);
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px rgba(34, 211, 238, 0.25);
+}
+
+button.primary {
+    background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+    color: #051020;
+}
+
+button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+button.danger {
+    background: var(--danger);
+    color: #0b1224;
+}
+
+.list {
+    display: grid;
+    gap: 10px;
+}
+
+.item {
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.item strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.meta {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    color: var(--text);
+}
+
+.pill span {
+    font-size: 13px;
+}
+
+.pill .remove {
+    background: none;
+    color: var(--muted);
+    border: none;
+    padding: 0 2px;
+    cursor: pointer;
+}
+
+.link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+}
+
+.order-card .list .item {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.small {
+    font-size: 12px;
+}
+
+.drawer.hidden {
+    display: none;
+}
+
+.drawer {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 100;
+}
+
+.drawer__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+}
+
+.drawer__content {
+    position: relative;
+    width: min(1100px, 96vw);
+    max-height: 86vh;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.drawer__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.drawer__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.drawer__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.list.tall {
+    max-height: 300px;
+    overflow: auto;
+}
+
+button.tiny {
+    padding: 6px 10px;
+    font-size: 13px;
+}

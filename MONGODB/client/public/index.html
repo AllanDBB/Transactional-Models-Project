@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Transaccional</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page">
+        <header class="hero">
+            <div>
+                <p class="kicker">Mongo + Express</p>
+                <h1>Dashboard de Clientes, Productos y Ordenes</h1>
+            </div>
+            <div class="hero-actions">
+                <button id="refresh-all" type="button" class="ghost">Refrescar datos</button>
+                <button id="open-data-panel" type="button" class="ghost">Ver datos</button>
+                <a class="link" href="/health" target="_blank">/health</a>
+            </div>
+        </header>
+
+        <main class="grid">
+            <section class="card">
+                <div class="card-header">
+                    <h2>Clientes</h2>
+                    <p class="hint">Incluye genero (Masculino/Femenino/Otro) y canal preferido.</p>
+                </div>
+                <form id="cliente-form" class="form">
+                    <input type="hidden" id="cliente-id">
+                    <div class="row">
+                        <label>Nombre <input id="cliente-nombre" required></label>
+                        <label>Email <input id="cliente-email" type="email" required></label>
+                    </div>
+                    <div class="row">
+                        <label>Genero
+                            <select id="cliente-genero" required>
+                                <option value="">Selecciona</option>
+                                <option>Masculino</option>
+                                <option>Femenino</option>
+                                <option>Otro</option>
+                            </select>
+                        </label>
+                        <label>Canal preferido
+                            <select id="cliente-canal">
+                                <option value="">(opcional)</option>
+                                <option value="WEB">WEB</option>
+                                <option value="TIENDA">TIENDA</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="actions">
+                        <button type="submit" class="primary" id="cliente-submit">Guardar cliente</button>
+                        <button type="button" class="ghost" id="cliente-cancel" hidden>Cancelar</button>
+                    </div>
+                </form>
+                <p class="muted small">Consulta los registros en el panel de datos.</p>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Productos</h2>
+                    <p class="hint">Permite equivalencias opcionales para SKU externos.</p>
+                </div>
+                <form id="producto-form" class="form">
+                    <input type="hidden" id="producto-id">
+                    <div class="row">
+                        <label>Codigo interno <input id="producto-codigo" required></label>
+                        <label>Nombre <input id="producto-nombre" required></label>
+                    </div>
+                    <div class="row">
+                        <label>Categoria <input id="producto-categoria" required></label>
+                        <label>SKU externo <input id="producto-sku" placeholder="(opcional)"></label>
+                    </div>
+                    <div class="row">
+                        <label>Alt <input id="producto-alt" placeholder="(opcional)"></label>
+                    </div>
+                    <div class="actions">
+                        <button type="submit" class="primary" id="producto-submit">Guardar producto</button>
+                        <button type="button" class="ghost" id="producto-cancel" hidden>Cancelar</button>
+                    </div>
+                </form>
+                <p class="muted small">Consulta los registros en el panel de datos.</p>
+            </section>
+
+            <section class="card order-card">
+                <div class="card-header">
+                    <h2>Ordenes (CRC)</h2>
+                    <p class="hint">Total e items en enteros CRC. Se pobla con clientes y productos existentes.</p>
+                </div>
+                <form id="orden-form" class="form">
+                    <div class="row">
+                        <label>Cliente
+                            <select id="orden-cliente" required></select>
+                        </label>
+                        <label>Canal
+                            <select id="orden-canal" required>
+                                <option value="">Selecciona</option>
+                                <option value="Online">Online</option>
+                                <option value="Tienda">Tienda</option>
+                                <option value="Telefono">Telefono</option>
+                            </select>
+                        </label>
+                        <label>Cupon <input id="orden-cupon" placeholder="(opcional)"></label>
+                    </div>
+
+                    <div class="items-builder">
+                        <div class="row">
+                            <label>Producto
+                                <select id="builder-producto"></select>
+                            </label>
+                            <label>Cantidad
+                                <input id="builder-cantidad" type="number" min="1" step="1" value="1">
+                            </label>
+                            <label>Precio unitario (CRC)
+                                <input id="builder-precio" type="number" min="0" step="1" value="0">
+                            </label>
+                            <button type="button" class="ghost" id="builder-add">Agregar item</button>
+                        </div>
+                        <div id="orden-items" class="pill-list"></div>
+                    </div>
+
+                    <div class="actions">
+                        <button type="submit" class="primary">Crear orden</button>
+                        <button type="button" class="ghost" id="orden-clear">Limpiar items</button>
+                    </div>
+                </form>
+                <p class="muted small">Consulta las órdenes en el panel de datos.</p>
+            </section>
+        </main>
+
+        <section id="data-panel" class="drawer hidden">
+            <div class="drawer__backdrop"></div>
+            <div class="drawer__content">
+                <div class="drawer__header">
+                    <div>
+                        <p class="kicker">Panel de datos</p>
+                        <h3>Listados y resultados del backend</h3>
+                    </div>
+                    <button id="close-data-panel" class="ghost">Cerrar</button>
+                </div>
+                <div class="drawer__grid">
+                    <div>
+                        <div class="drawer__title">
+                            <h4>Clientes</h4>
+                            <button class="ghost tiny" type="button" onclick="loadClientes()">Refrescar</button>
+                        </div>
+                        <div id="clientes-list" class="list tall"></div>
+                    </div>
+                    <div>
+                        <div class="drawer__title">
+                            <h4>Productos</h4>
+                            <button class="ghost tiny" type="button" onclick="loadProductos()">Refrescar</button>
+                        </div>
+                        <div id="productos-list" class="list tall"></div>
+                    </div>
+                    <div>
+                        <div class="drawer__title">
+                            <h4>Ordenes</h4>
+                            <button class="ghost tiny" type="button" onclick="loadOrdenes()">Refrescar</button>
+                        </div>
+                        <div id="ordenes-list" class="list tall"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
