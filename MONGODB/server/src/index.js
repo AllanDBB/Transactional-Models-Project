@@ -14,6 +14,11 @@ mongoose.connect(uri)
     process.exit(1);
   });
 
+// Rutas API
+app.use('/api/clientes', require('./routes/clienteRoutes'));
+app.use('/api/productos', require('./routes/productoRoutes'));
+app.use('/api/ordenes', require('./routes/ordenRoutes'));
+
 app.get('/health', (_req, res) => res.send('ok'));
 
 const port = process.env.PORT || 3000;
