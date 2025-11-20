@@ -91,10 +91,8 @@ BEGIN
             month INT NOT NULL,
             day INT NOT NULL,
             date DATE NOT NULL UNIQUE,
-            exchangeRateToUSD DECIMAL(10,6) NOT NULL,
             CONSTRAINT chk_month CHECK (month BETWEEN 1 AND 12),
             CONSTRAINT chk_day CHECK (day BETWEEN 1 AND 31),
-            CONSTRAINT chk_exchange_rate CHECK (exchangeRateToUSD > 0)
         );
         CREATE INDEX idx_dimtime_date ON DimTime(date);
         
