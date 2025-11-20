@@ -14,16 +14,13 @@
                 <h1>Panel de Carga de Base de Datos</h1>
                 <p class="subtitle">Gestión de datos transaccionales</p>
             </div>
-            <div class="hero-actions">
-                <a class="link" href="/health" target="_blank">/health</a>
-            </div>
         </header>
 
         <main class="grid">
             <!-- Card para MSSQL -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>🗄️ Base de Datos Transaccional MSSQL</h2>
+                    <h2> Base de Datos Transaccional MSSQL</h2>
                     <p class="hint">Gestiona el schema y los datos de la base transaccional</p>
                 </div>
                 
@@ -31,7 +28,7 @@
                     <!-- Inicializar Schema -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon">🔧</span>
+                            <span class="icon"></span>
                             <h3>Inicializar Schema</h3>
                         </div>
                         <p class="action-description">
@@ -44,10 +41,26 @@
                         <div id="status-init-schema" class="status-message"></div>
                     </div>
 
+                    <!-- Eliminar Schema -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon"></span>
+                            <h3>Eliminar Schema</h3>
+                        </div>
+                        <p class="action-description">
+                            Elimina completamente el schema <code>sales_ms</code> y todas sus tablas. <strong>Acción destructiva</strong>.
+                        </p>
+                        <button id="btn-drop-schema" class="action-button danger">
+                            <span class="button-text">Eliminar Schema</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-drop-schema" class="status-message"></div>
+                    </div>
+
                     <!-- Limpiar Base de Datos -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon">🧹</span>
+                            <span class="icon"></span>
                             <h3>Limpiar Datos</h3>
                         </div>
                         <p class="action-description">
@@ -63,7 +76,7 @@
                     <!-- Generar Datos de Prueba -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon">📊</span>
+                            <span class="icon"></span>
                             <h3>Generar Datos</h3>
                         </div>
                         <p class="action-description">
@@ -79,7 +92,7 @@
                     <!-- Verificar Estado -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon">📈</span>
+                            <span class="icon"></span>
                             <h3>Estado Actual</h3>
                         </div>
                         <div id="db-stats" class="stats-container">
@@ -112,7 +125,7 @@
             <!-- Card para MySQL (placeholder) -->
             <section class="card full-width disabled">
                 <div class="card-header">
-                    <h2>🐬 Base de Datos MySQL</h2>
+                    <h2> Base de Datos MySQL</h2>
                     <p class="hint">Próximamente disponible</p>
                 </div>
                 <div class="action-grid">
@@ -126,7 +139,7 @@
 
         <footer class="footer">
             <p>Panel de Administración - Bases de Datos Transaccionales</p>
-            <p class="hint">Universidad de Costa Rica - BD2</p>
+            <p class="hint">Instituto Tecnológico de Costa Rica - BD2</p>
         </footer>
     </div>
 

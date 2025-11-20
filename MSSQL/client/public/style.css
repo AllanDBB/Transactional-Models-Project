@@ -224,6 +224,15 @@ code {
     background: var(--warning-hover);
 }
 
+.action-button.danger {
+    background: var(--danger);
+    color: white;
+}
+
+.action-button.danger:hover:not(:disabled) {
+    background: var(--danger-hover);
+}
+
 .action-button.secondary {
     background: var(--secondary);
     color: white;

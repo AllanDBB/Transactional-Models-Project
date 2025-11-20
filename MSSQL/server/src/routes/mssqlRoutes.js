@@ -13,15 +13,19 @@ const config = {
         encrypt: false,
         trustServerCertificate: true,
         enableArithAbort: true
-    }
+    },
+    requestTimeout: 120000,  // 2 minutos para operaciones pesadas
+    connectionTimeout: 30000  // 30 segundos para conectar
 };
 
 // Función helper para ejecutar stored procedures
-async function executeStoredProcedure(procedureName) {
+async function executeStoredProcedure(procedureName, timeout = 120000) {
     let pool;
     try {
         pool = await sql.connect(config);
-        const result = await pool.request().execute(procedureName);
+        const request = pool.request();
+        request.timeout = timeout;  // Timeout específico para este request
+        const result = await request.execute(procedureName);
         return { success: true, result };
     } catch (error) {
         console.error(`Error ejecutando ${procedureName}:`, error);
@@ -34,11 +38,13 @@ async function executeStoredProcedure(procedureName) {
 }
 
 // Función helper para ejecutar queries
-async function executeQuery(query) {
+async function executeQuery(query, timeout = 30000) {
     let pool;
     try {
         pool = await sql.connect(config);
-        const result = await pool.request().query(query);
+        const request = pool.request();
+        request.timeout = timeout;
+        const result = await request.query(query);
         return result;
     } catch (error) {
         console.error('Error ejecutando query:', error);
@@ -58,6 +64,23 @@ router.post('/init-schema', async (req, res) => {
         res.json({
             success: true,
             message: 'Schema inicializado exitosamente'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// POST /api/mssql/drop-schema - Eliminar schema
+router.post('/drop-schema', async (req, res) => {
+    try {
+        console.log('Eliminando schema...');
+        await executeStoredProcedure('dbo.sp_drop_schema');
+        res.json({
+            success: true,
+            message: 'Schema eliminado exitosamente'
         });
     } catch (error) {
         res.status(500).json({

@@ -70,6 +70,36 @@ document.getElementById('btn-init-schema').addEventListener('click', async () =>
     }
 });
 
+// Eliminar Schema
+document.getElementById('btn-drop-schema').addEventListener('click', async () => {
+    if (isLoading) return;
+    
+    if (!confirm('⚠️ ADVERTENCIA: ¿Está COMPLETAMENTE SEGURO de eliminar el schema?\n\nEsto eliminará TODAS las tablas y su estructura.\n\nEsta acción NO se puede deshacer.')) {
+        return;
+    }
+    
+    // Segunda confirmación para seguridad
+    const confirmText = prompt('Para confirmar, escriba "ELIMINAR" (en mayúsculas):');
+    if (confirmText !== 'ELIMINAR') {
+        showStatus('status-drop-schema', 'Operación cancelada', 'info');
+        return;
+    }
+    
+    isLoading = true;
+    setButtonLoading('btn-drop-schema', true);
+    
+    try {
+        const result = await apiCall('/mssql/drop-schema', 'POST');
+        showStatus('status-drop-schema', result.message || 'Schema eliminado exitosamente', 'success');
+        await refreshStats();
+    } catch (error) {
+        showStatus('status-drop-schema', `Error: ${error.message}`, 'error');
+    } finally {
+        setButtonLoading('btn-drop-schema', false);
+        isLoading = false;
+    }
+});
+
 // Limpiar Base de Datos
 document.getElementById('btn-clean-db').addEventListener('click', async () => {
     if (isLoading) return;
@@ -103,7 +133,7 @@ document.getElementById('btn-generate-data').addEventListener('click', async () 
     
     isLoading = true;
     setButtonLoading('btn-generate-data', true);
-    showStatus('status-generate-data', 'Generando datos... Este proceso puede tardar 10-15 segundos', 'info');
+    showStatus('status-generate-data', 'Generando datos... Este proceso puede tardar algunos segundos', 'info');
     
     try {
         const result = await apiCall('/mssql/generate-data', 'POST');
