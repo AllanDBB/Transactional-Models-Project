@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Transaccional MSSQL</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page">
+        <header class="hero">
+            <div>
+                <p class="kicker">MSSQL Server</p>
+                <h1>Panel de Carga de Base de Datos</h1>
+                <p class="subtitle">Gestión de datos transaccionales</p>
+            </div>
+            <div class="hero-actions">
+                <a class="link" href="/health" target="_blank">/health</a>
+            </div>
+        </header>
+
+        <main class="grid">
+            <!-- Card para MSSQL -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>🗄️ Base de Datos Transaccional MSSQL</h2>
+                    <p class="hint">Gestiona el schema y los datos de la base transaccional</p>
+                </div>
+                
+                <div class="action-grid">
+                    <!-- Inicializar Schema -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">🔧</span>
+                            <h3>Inicializar Schema</h3>
+                        </div>
+                        <p class="action-description">
+                            Crea el schema <code>sales_ms</code> y todas las tablas necesarias (Cliente, Producto, Orden, OrdenDetalle)
+                        </p>
+                        <button id="btn-init-schema" class="action-button primary">
+                            <span class="button-text">Inicializar Schema</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-init-schema" class="status-message"></div>
+                    </div>
+
+                    <!-- Limpiar Base de Datos -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">🧹</span>
+                            <h3>Limpiar Datos</h3>
+                        </div>
+                        <p class="action-description">
+                            Elimina todos los registros de las tablas transaccionales (Cliente, Producto, Orden, Detalle)
+                        </p>
+                        <button id="btn-clean-db" class="action-button warning">
+                            <span class="button-text">Limpiar BD</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-clean-db" class="status-message"></div>
+                    </div>
+
+                    <!-- Generar Datos de Prueba -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">📊</span>
+                            <h3>Generar Datos</h3>
+                        </div>
+                        <p class="action-description">
+                            Genera datos de prueba: 600 clientes, 5,000 productos, 5,000 órdenes y 17,500 detalles
+                        </p>
+                        <button id="btn-generate-data" class="action-button success">
+                            <span class="button-text">Generar Datos</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-generate-data" class="status-message"></div>
+                    </div>
+
+                    <!-- Verificar Estado -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">📈</span>
+                            <h3>Estado Actual</h3>
+                        </div>
+                        <div id="db-stats" class="stats-container">
+                            <div class="stat-item">
+                                <span class="stat-label">Clientes:</span>
+                                <span id="stat-clientes" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Productos:</span>
+                                <span id="stat-productos" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Órdenes:</span>
+                                <span id="stat-ordenes" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Detalles:</span>
+                                <span id="stat-detalles" class="stat-value">-</span>
+                            </div>
+                        </div>
+                        <button id="btn-refresh-stats" class="action-button secondary">
+                            <span class="button-text">Actualizar Estado</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-refresh-stats" class="status-message"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Card para MySQL (placeholder) -->
+            <section class="card full-width disabled">
+                <div class="card-header">
+                    <h2>🐬 Base de Datos MySQL</h2>
+                    <p class="hint">Próximamente disponible</p>
+                </div>
+                <div class="action-grid">
+                    <div class="action-card">
+                        <p class="action-description">Funcionalidad en desarrollo...</p>
+                        <button class="action-button" disabled>Próximamente</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Panel de Administración - Bases de Datos Transaccionales</p>
+            <p class="hint">Universidad de Costa Rica - BD2</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
