@@ -125,11 +125,9 @@ BEGIN
         
         CREATE TABLE DimChannel (
             id INT IDENTITY(1,1) PRIMARY KEY,
-            name VARCHAR(100) NOT NULL UNIQUE,
             channelType VARCHAR(50),
             CONSTRAINT chk_channel_type CHECK (channelType IN ('Website', 'Store', 'App', 'Partner', 'Other'))
         );
-        CREATE INDEX idx_dimchannel_name ON DimChannel(name);
         
         CREATE TABLE DimOrder (
             id INT IDENTITY(1,1) PRIMARY KEY,
@@ -143,8 +141,6 @@ BEGIN
             fromCurrency VARCHAR(3) NOT NULL,
             date DATE NOT NULL,
             rate DECIMAL(18,6) NOT NULL,
-            created_at DATETIME DEFAULT GETDATE(),
-            updated_at DATETIME DEFAULT GETDATE(),
             CONSTRAINT chk_currencies CHECK (toCurrency IN ('USD')),
             CONSTRAINT chk_from_currencies CHECK (fromCurrency IN ('CRC')),
             CONSTRAINT chk_rate_positive CHECK (rate > 0),
