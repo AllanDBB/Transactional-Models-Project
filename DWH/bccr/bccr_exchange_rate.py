@@ -1,7 +1,7 @@
 import requests
 import xml.etree.ElementTree as ET
 import pyodbc
-import datetime
+from datetime import datetime, timedelta
 import os
 import time
 import logging
@@ -84,7 +84,7 @@ class BCCRExchangeRate:
                     
                     if fecha_str and valor_str:
                         try:
-                            fecha = datetime.datetime.strptime(fecha_str, '%Y-%m-%dT%H:%M:%S%z').date()
+                            fecha = datetime.strptime(fecha_str, '%Y-%m-%dT%H:%M:%S%z').date()
                             valor = float(valor_str)
                             exchange_rates.append({'fecha': fecha, 'tipo_cambio': valor})
                         except ValueError as e:
@@ -143,24 +143,33 @@ class BCCRExchangeRate:
         try:
             cursor = connection.cursor()
             
+            # Convert fecha to proper date format if needed
+            if isinstance(fecha, str):
+                fecha = datetime.strptime(fecha, '%Y-%m-%d').date()
             
-            cursor.execute("SELECT IdTiempo FROM DimTiempo WHERE Fecha = ?", fecha)
+            # Verificar si existe en DimExchangeRate
+            cursor.execute("""
+                SELECT rate FROM DimExchangeRate 
+                WHERE fromCurrency = 'CRC' 
+                AND toCurrency = 'USD' 
+                AND date = ?
+            """, (fecha,))
             existing = cursor.fetchone()
             
             if existing:
-                cursor.execute(
-                    "UPDATE DimTiempo SET TipoCambio = ? WHERE Fecha = ?",
-                    tipo_cambio, fecha
-                )
+                cursor.execute("""
+                    UPDATE DimExchangeRate 
+                    SET rate = ? 
+                    WHERE fromCurrency = 'CRC' 
+                    AND toCurrency = 'USD' 
+                    AND date = ?
+                """, (float(tipo_cambio), fecha))
                 logging.info(f"Actualizado tipo de cambio para {fecha}: {tipo_cambio}")
             else:
                 cursor.execute("""
-                    INSERT INTO DimTiempo (Anio, Mes, Dia, Fecha, Semana, DiaSemana, TipoCambio)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, 
-                    fecha.year, fecha.month, fecha.day, fecha, 
-                    fecha.isocalendar()[1], fecha.strftime('%A'), tipo_cambio
-                )
+                    INSERT INTO DimExchangeRate (fromCurrency, toCurrency, date, rate)
+                    VALUES ('CRC', 'USD', ?, ?)
+                """, (fecha, float(tipo_cambio)))
                 logging.info(f"Insertado nuevo registro para {fecha}: {tipo_cambio}")
             
             connection.commit()
@@ -175,8 +184,8 @@ class BCCRExchangeRate:
     
     def populate_historical_data(self):
 
-        end_date = datetime.date.today()
-        start_date = end_date - datetime.timedelta(days=3*365)  # 3 años antes 
+        end_date = datetime.today().date()
+        start_date = end_date - timedelta(days=3*365)  # 3 años antes 
         
         logging.info(f"Obteniendo datos históricos desde {start_date} hasta {end_date}")
         
@@ -184,7 +193,7 @@ class BCCRExchangeRate:
         current_date = start_date
         
         while current_date < end_date:
-            chunk_end = min(current_date + datetime.timedelta(days=180), end_date)
+            chunk_end = min(current_date + timedelta(days=180), end_date)
             
             logging.info(f"Procesando chunk: {current_date} a {chunk_end}")
             exchange_rates = self.get_exchange_rate_data(current_date, chunk_end)
@@ -195,14 +204,14 @@ class BCCRExchangeRate:
                     rate_data['tipo_cambio']
                 )
             
-            current_date = chunk_end + datetime.timedelta(days=1)
+            current_date = chunk_end + timedelta(days=1)
             time.sleep(2)  
         
         logging.info("Población de datos históricos completada")
     
     def update_current_rate(self):
-        today = datetime.date.today()
-        yesterday = today - datetime.timedelta(days=1)
+        today = datetime.today().date()
+        yesterday = today - timedelta(days=1)
         
         logging.info(f"Actualizando tipo de cambio para {today}")
         
