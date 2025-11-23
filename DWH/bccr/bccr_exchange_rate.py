@@ -1,6 +1,6 @@
 import requests
 import xml.etree.ElementTree as ET
-import pyodbc
+import pymssql
 from datetime import datetime, timedelta
 import os
 import time
@@ -106,33 +106,40 @@ class BCCRExchangeRate:
     
     def connect_to_database(self):
         try:
-            if self.username and self.password:
-                
-                connection_string = (
-                    f'DRIVER={{{self.driver}}};'
-                    f'SERVER={self.server};'
-                    f'DATABASE={self.database};'
-                    f'UID={self.username};'
-                    f'PWD={self.password};'
-                    'TrustServerCertificate=yes;'
-                )
-                logging.info(f"Conectando a SQL Server: {self.server}/{self.database} con usuario {self.username}")
-            else:
-                
-                connection_string = (
-                    f'DRIVER={{{self.driver}}};'
-                    f'SERVER={self.server};'
-                    f'DATABASE={self.database};'
-                    'Trusted_Connection=yes;'
-                    'TrustServerCertificate=yes;'
-                )
-                logging.info(f"Conectando a SQL Server: {self.server}/{self.database} con autenticación Windows")
+            logging.info(f"Conectando a SQL Server: {self.server}/{self.database}")
             
-            connection = pyodbc.connect(connection_string)
-            logging.info("Conexión a base de datos exitosa")
+            # pymssql se conecta directamente usando FreeTDS, sin necesidad de drivers ODBC
+            # El servidor puede ser "localhost,1434" o "localhost:1434"
+            server_parts = self.server.replace(",", ":").split(":")
+            server_host = server_parts[0]
+            server_port = int(server_parts[1]) if len(server_parts) > 1 else 1433
+            
+            # Si el host es localhost y estamos en Docker, usar el nombre del contenedor
+            # En Docker, SQL Server siempre escucha en puerto 1433 internamente
+            if server_host == "localhost":
+                server_host = "sqlserver-dw"
+                server_port = 1433  # Puerto interno del contenedor, no el mapeo externo
+            
+            logging.info(f"Intentando conectar a {server_host}:{server_port}/{self.database}")
+            
+            connection = pymssql.connect(
+                server=server_host,
+                port=server_port,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+                timeout=10,
+                as_dict=False
+            )
+            
+            logging.info("✓ Conexión a base de datos exitosa (pymssql/FreeTDS)")
             return connection
-        except pyodbc.Error as e:
-            logging.error(f"Error conectando a la base de datos: {e}")
+            
+        except pymssql.DatabaseError as e:
+            logging.error(f"✗ Error de base de datos: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"✗ Error conectando a la base de datos: {e}")
             return None
     
     def update_dim_tiempo_exchange_rate(self, fecha, tipo_cambio):
@@ -175,7 +182,7 @@ class BCCRExchangeRate:
             connection.commit()
             return True
             
-        except pyodbc.Error as e:
+        except Exception as e:
             logging.error(f"Error actualizando base de datos: {e}")
             connection.rollback()
             return False

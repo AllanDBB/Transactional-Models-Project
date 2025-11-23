@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  bccr-scheduler:
+    build:
+      context: ../..
+      dockerfile: DWH/bccr/Dockerfile
+    container_name: bccr-scheduler
+    environment:
+      - TZ=America/Costa_Rica
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - dwh_default
+
+networks:
+  dwh_default:
+    external: true
+    name: mssql_default

@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   sqlserver-dw:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    build:
+      context: .
+      dockerfile: Dockerfile.sqlserver
     container_name: sqlserver-dw
     environment:
       - ACCEPT_EULA=Y
