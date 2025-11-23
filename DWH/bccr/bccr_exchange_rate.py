@@ -118,7 +118,7 @@ class BCCRExchangeRate:
             # En Docker, SQL Server siempre escucha en puerto 1433 internamente
             if server_host == "localhost":
                 server_host = "sqlserver-dw"
-                server_port = 1433  # Puerto interno del contenedor, no el mapeo externo
+                server_port = 1433  # Puerto interno del contenedor (1434 es solo el mapeo externo)
             
             logging.info(f"Intentando conectar a {server_host}:{server_port}/{self.database}")
             
@@ -159,23 +159,23 @@ class BCCRExchangeRate:
                 SELECT rate FROM DimExchangeRate 
                 WHERE fromCurrency = 'CRC' 
                 AND toCurrency = 'USD' 
-                AND date = ?
+                AND date = %s
             """, (fecha,))
             existing = cursor.fetchone()
             
             if existing:
                 cursor.execute("""
                     UPDATE DimExchangeRate 
-                    SET rate = ? 
+                    SET rate = %s 
                     WHERE fromCurrency = 'CRC' 
                     AND toCurrency = 'USD' 
-                    AND date = ?
+                    AND date = %s
                 """, (float(tipo_cambio), fecha))
                 logging.info(f"Actualizado tipo de cambio para {fecha}: {tipo_cambio}")
             else:
                 cursor.execute("""
                     INSERT INTO DimExchangeRate (fromCurrency, toCurrency, date, rate)
-                    VALUES ('CRC', 'USD', ?, ?)
+                    VALUES ('CRC', 'USD', %s, %s)
                 """, (fecha, float(tipo_cambio)))
                 logging.info(f"Insertado nuevo registro para {fecha}: {tipo_cambio}")
             

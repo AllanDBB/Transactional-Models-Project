@@ -18,4 +18,4 @@ services:
 networks:
   dwh_default:
     external: true
-    name: mssql_default
+    name: dwh_default
