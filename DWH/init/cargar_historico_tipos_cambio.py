@@ -1,399 +1,271 @@
 #!/usr/bin/env python3
 """
-Script para cargar el historial de tipos de cambio 3 años en DimExchangeRate
-Obtiene datos reales del BCCR (Banco Central de Costa Rica)
-Este será ejecutado una sola vez para popular la tabla
-Luego, cada ETL consultará esta tabla para sus conversiones
+Script para cargar histórico de tipos de cambio CRC→USD desde BCCR
+Usa el servicio web SOAP del BCCR
 """
 
-import pyodbc
 import requests
-from datetime import datetime, timedelta
-from pathlib import Path
+import xml.etree.ElementTree as ET
+import pyodbc
+import datetime
+import os
 import sys
+import time
 import logging
+import platform
+from pathlib import Path
+from dotenv import load_dotenv
 
-# Agregar el módulo de configuración
-sys.path.insert(0, str(Path(__file__).parent.parent / 'MSSQL' / 'etl'))
+# Cargar variables de entorno
+load_dotenv()
 
-try:
-    from config import DatabaseConfig
-except ImportError:
-    print("⚠️  No se encontró config.py, usando valores hardcoded")
-    class DatabaseConfig:
-        @staticmethod
-        def get_dw_connection_string():
-            return "DRIVER={ODBC Driver 17 for SQL Server};SERVER=192.168.100.50,1434;DATABASE=MSSQL_DW;UID=sa;PWD=Pass@1234"
-
-
-# Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class BCCRAPIClient:
-    """Cliente para obtener tipos de cambio del BCCR"""
-    
-    # Token del BCCR
-    TOKEN = "AVMGEIZILV"
-    BASE_URL = "https://www.bccr.fi.cr/json/bccr"
-    
-    # Monedas soportadas (código BCCR)
-    MONEDAS = {
-        'USD': 318,      # Dólar USA
-        'EUR': 303,      # Euro
-        'MXN': 332,      # Peso Mexicano
-        'GTQ': 320,      # Quetzal Guatemalteco
-        'PEN': 427,      # Sol Peruano
-        'COP': 313,      # Peso Colombiano
-        'BRL': 301,      # Real Brasileño
-        'CRC': 336,      # Colón Costarricense
-    }
+class BCCRExchangeRateLoader:
+    """Carga tipos de cambio desde BCCR al DWH"""
     
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
+        # Variables BCCR
+        self.bccr_user = os.getenv("BCCR_USER", "guest@bccr.fi.cr")
+        self.bccr_password = os.getenv("BCCR_PASSWORD")
+        
+        # Variables SQL Server
+        self.server = os.getenv("serverenv", "localhost")
+        self.database = os.getenv("databaseenv", "MSSQL_DW")
+        self.username = os.getenv("usernameenv", "sa")
+        self.password = os.getenv("passwordenv")
+        
+        # Driver ODBC
+        if platform.system() == "Windows":
+            self.driver = "ODBC Driver 17 for SQL Server"
+        else:
+            self.driver = "ODBC Driver 18 for SQL Server"
+        
+        # BCCR SOAP
+        self.base_url = "https://gee.bccr.fi.cr/Indicadores/Suscripciones/WS/wsindicadoreseconomicos.asmx"
+        self.indicador = "317"  # Tipo de cambio de referencia
     
-    def obtener_tasa(self, de_moneda: str, a_moneda: str, fecha: datetime):
-        """Obtiene tasa de cambio para una fecha específica"""
+    def get_exchange_rate_data(self, start_date, end_date):
+        """Obtiene datos de tipos de cambio desde BCCR usando SOAP"""
+        
+        soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ObtenerIndicadoresEconomicosXML xmlns="http://ws.sdde.bccr.fi.cr">
+      <Indicador>{self.indicador}</Indicador>
+      <FechaInicio>{start_date.strftime('%d/%m/%Y')}</FechaInicio>
+      <FechaFinal>{end_date.strftime('%d/%m/%Y')}</FechaFinal>
+      <Nombre>{self.bccr_user}</Nombre>
+      <SubNiveles>N</SubNiveles>
+      <CorreoElectronico>{self.bccr_user}</CorreoElectronico>
+      <Token>{self.bccr_password}</Token>
+    </ObtenerIndicadoresEconomicosXML>
+  </soap:Body>
+</soap:Envelope>"""
+
+        headers = {
+            'Content-Type': 'text/xml; charset=utf-8',
+            'SOAPAction': '"http://ws.sdde.bccr.fi.cr/ObtenerIndicadoresEconomicosXML"'
+        }
+        
+        logger.info(f"Consultando BCCR desde {start_date} hasta {end_date}")
+        
         try:
-            if de_moneda not in self.MONEDAS or a_moneda not in self.MONEDAS:
-                return None
-            
-            de_codigo = self.MONEDAS[de_moneda]
-            a_codigo = self.MONEDAS[a_moneda]
-            
-            # Formatear fecha para BCCR
-            fecha_str = fecha.strftime('%d/%m/%Y')
-            
-            # Construir URL
-            url = f"{self.BASE_URL}/{de_codigo}/{a_codigo}/{fecha_str}/{self.TOKEN}"
-            
-            response = self.session.get(url, timeout=10)
+            response = requests.post(self.base_url, data=soap_body, headers=headers, timeout=30)
             response.raise_for_status()
             
-            data = response.json()
+            # Parsear XML respuesta SOAP
+            root = ET.fromstring(response.content)
             
-            # Extraer tasa del resultado
-            if data.get('resultados') and len(data['resultados']) > 0:
-                return float(data['resultados'][0]['TC'])
-            else:
-                logger.warning(f"Sin datos para {de_moneda}→{a_moneda} en {fecha_str}")
-                return None
+            # Buscar resultado XML dentro de SOAP
+            soap_result = root.find('.//{http://ws.sdde.bccr.fi.cr}ObtenerIndicadoresEconomicosXMLResult')
+            
+            if soap_result is not None and soap_result.text:
+                inner_xml = soap_result.text
+                inner_root = ET.fromstring(inner_xml)
                 
-        except Exception as e:
-            logger.warning(f"Error obteniendo tasa {de_moneda}→{a_moneda} ({fecha}): {e}")
-            return None
-    
-    def obtener_rango_tasas(self, de_moneda: str, a_moneda: str, fecha_inicio: datetime, fecha_fin: datetime):
-        """Obtiene tasas para un rango de fechas"""
-        try:
-            if de_moneda not in self.MONEDAS or a_moneda not in self.MONEDAS:
+                # Extraer tasas
+                exchange_rates = []
+                for datos in inner_root.findall('.//INGC011_CAT_INDICADORECONOMIC'):
+                    fecha_elem = datos.find('DES_FECHA')
+                    valor_elem = datos.find('NUM_VALOR')
+                    
+                    if fecha_elem is not None and valor_elem is not None:
+                        fecha_str = fecha_elem.text
+                        valor_str = valor_elem.text
+                        
+                        if fecha_str and valor_str:
+                            try:
+                                fecha = datetime.datetime.strptime(fecha_str, '%Y-%m-%dT%H:%M:%S%z').date()
+                                valor = float(valor_str)
+                                exchange_rates.append({'fecha': fecha, 'tasa': valor})
+                            except ValueError as e:
+                                logger.warning(f"Error parsing date/value: {e}")
+                                continue
+                
+                logger.info(f"✅ Obtenidos {len(exchange_rates)} registros del BCCR")
+                return exchange_rates
+            else:
+                logger.warning("❌ No se encontró resultado XML en la respuesta SOAP")
                 return []
-            
-            de_codigo = self.MONEDAS[de_moneda]
-            a_codigo = self.MONEDAS[a_moneda]
-            
-            # Formatear fechas
-            inicio_str = fecha_inicio.strftime('%d/%m/%Y')
-            fin_str = fecha_fin.strftime('%d/%m/%Y')
-            
-            # Construir URL para rango
-            url = f"{self.BASE_URL}/{de_codigo}/{a_codigo}/{inicio_str}/{fin_str}/{self.TOKEN}"
-            
-            response = self.session.get(url, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            tasas = []
-            if data.get('resultados'):
-                for resultado in data['resultados']:
-                    tasas.append({
-                        'fecha': datetime.strptime(resultado['Fecha'], '%d/%m/%Y').date(),
-                        'tasa': float(resultado['TC'])
-                    })
-            
-            logger.info(f"Obtenidas {len(tasas)} tasas para {de_moneda}→{a_moneda}")
-            return tasas
-            
-        except Exception as e:
-            logger.error(f"Error obteniendo rango de tasas {de_moneda}→{a_moneda}: {e}")
+        
+        except requests.RequestException as e:
+            logger.error(f"❌ Error al obtener datos del BCCR: {e}")
+            return []
+        except ET.ParseError as e:
+            logger.error(f"❌ Error al parsear XML: {e}")
             return []
     
-    def cerrar(self):
-        """Cierra la sesión"""
-        self.session.close()
-
-
-class HistoricoTiposCambio:
-    """Carga histórico de tipos de cambio 3 años desde BCCR"""
-    
-    def __init__(self):
-        self.conn = None
-        self.bccr_client = BCCRAPIClient()
-        self.fecha_inicio = None
-        self.fecha_fin = None
-        self.datos_cargados = []
-    
-    def conectar(self):
-        """Conecta a DWH"""
+    def connect_to_database(self):
+        """Conecta a SQL Server DWH"""
         try:
-            conn_str = DatabaseConfig.get_dw_connection_string()
-            self.conn = pyodbc.connect(conn_str)
-            print("[✅] Conectado a DWH")
-            return True
-        except Exception as e:
-            print(f"[❌] Error conectando a DWH: {e}")
-            return False
+            if self.username and self.password:
+                connection_string = (
+                    f'DRIVER={{{self.driver}}};'
+                    f'SERVER={self.server};'
+                    f'DATABASE={self.database};'
+                    f'UID={self.username};'
+                    f'PWD={self.password};'
+                    'TrustServerCertificate=yes;'
+                )
+                logger.info(f"Conectando a SQL: {self.server}/{self.database}")
+            else:
+                connection_string = (
+                    f'DRIVER={{{self.driver}}};'
+                    f'SERVER={self.server};'
+                    f'DATABASE={self.database};'
+                    'Trusted_Connection=yes;'
+                    'TrustServerCertificate=yes;'
+                )
+                logger.info(f"Conectando con Windows auth: {self.server}/{self.database}")
+            
+            connection = pyodbc.connect(connection_string)
+            logger.info("✅ Conexión a base de datos exitosa")
+            return connection
+        except pyodbc.Error as e:
+            logger.error(f"❌ Error conectando a BD: {e}")
+            return None
     
-    def cerrar(self):
-        """Cierra conexiones"""
-        if self.conn:
-            self.conn.close()
-        self.bccr_client.cerrar()
-    
-    def cargar_historico_3_anos(self):
-        """Carga histórico de 3 años desde BCCR"""
-        try:
-            print("\n" + "=" * 80)
-            print("CARGANDO HISTORICO DE TIPOS DE CAMBIO (3 AÑOS DESDE BCCR)")
-            print("=" * 80)
-            print()
-            
-            # Calcular rango de fechas
-            fecha_fin = datetime.now().date()
-            fecha_inicio = fecha_fin - timedelta(days=365*3)
-            
-            print(f"[RANGO] Período: {fecha_inicio} a {fecha_fin}")
-            print(f"[BCCR] Token: {self.bccr_client.TOKEN}")
-            print()
-            
-            cursor = self.conn.cursor()
-            
-            # Limpiar tabla
-            print("[LIMPIANDO] Tabla DimExchangeRate...")
-            cursor.execute("TRUNCATE TABLE DimExchangeRate")
-            self.conn.commit()
-            print()
-            
-            # Obtener tasas por cada moneda
-            monedas = ['CRC', 'USD', 'EUR', 'MXN', 'GTQ', 'PEN', 'COP', 'BRL']
-            registros_totales = 0
-            
-            for de_moneda in monedas:
-                print(f"[OBTENIENDO] Tasas para {de_moneda}→USD ({fecha_inicio} a {fecha_fin})")
-                
-                # Obtener rango de tasas desde BCCR
-                tasas = self.bccr_client.obtener_rango_tasas(de_moneda, 'USD', fecha_inicio, fecha_fin)
-                
-                if tasas:
-                    registros_insertados = 0
-                    for tasa_data in tasas:
-                        try:
-                            cursor.execute("""
-                                INSERT INTO DimExchangeRate (fromCurrency, toCurrency, date, rate)
-                                VALUES (?, ?, ?, ?)
-                            """, (de_moneda, 'USD', tasa_data['fecha'], tasa_data['tasa']))
-                            registros_insertados += 1
-                        except Exception as e:
-                            logger.warning(f"Error insertando {de_moneda}→USD ({tasa_data['fecha']}): {e}")
-                    
-                    if registros_insertados > 0:
-                        self.conn.commit()
-                        print(f"  ✅ {registros_insertados} registros insertados")
-                        registros_totales += registros_insertados
-                    else:
-                        print(f"  ⚠️  No se pudieron insertar registros")
-                else:
-                    print(f"  ⚠️  No se obtuvieron datos del BCCR")
-            
-            cursor.close()
-            
-            print()
-            print("=" * 80)
-            print(f"[✅] HISTORICO CARGADO: {registros_totales} registros")
-            print("=" * 80)
-            
-            # Verificar carga
-            self.verificar_carga()
-            
-            return True
-            
-        except Exception as e:
-            print(f"\n[❌] Error cargando histórico: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
-    def verificar_carga(self):
-        """Verifica que la carga fue exitosa"""
-        try:
-            print("\n[VERIFICACION] Conteos por moneda:")
-            print("-" * 80)
-            
-            cursor = self.conn.cursor()
-            
-            cursor.execute("""
-                SELECT 
-                    fromCurrency AS 'Moneda',
-                    COUNT(*) AS 'Registros',
-                    MIN(rate) AS 'Tasa Min',
-                    MAX(rate) AS 'Tasa Max',
-                    AVG(rate) AS 'Tasa Promedio'
-                FROM DimExchangeRate
-                GROUP BY fromCurrency
-                ORDER BY fromCurrency
-            """)
-            
-            rows = cursor.fetchall()
-            
-            for row in rows:
-                print(f"  {row[0]:4} → USD:  {row[1]:6} registros  |  "
-                      f"Min: {row[2]:.6f}  |  Max: {row[3]:.6f}  |  Prom: {row[4]:.6f}")
-            
-            cursor.close()
-            
-            # Total
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM DimExchangeRate")
-            total = cursor.fetchone()[0]
-            cursor.close()
-            
-            print("-" * 80)
-            print(f"  TOTAL: {total:,} registros de tipos de cambio")
-            print()
-            
-        except Exception as e:
-            print(f"[⚠️ ] Error en verificación: {e}")
-    
-    def crear_vista_consulta_rapida(self):
-        """Crea vista para que los ETLs consulten fácilmente"""
-        try:
-            print("\n[CREANDO] Vista para consultas rápidas...")
-            
-            cursor = self.conn.cursor()
-            
-            # Eliminar vista si existe
-            cursor.execute("""
-                IF OBJECT_ID('dbo.vw_exchange_rate_latest', 'V') IS NOT NULL
-                    DROP VIEW dbo.vw_exchange_rate_latest;
-            """)
-            
-            # Crear vista con las tasas más recientes por moneda
-            cursor.execute("""
-                CREATE VIEW dbo.vw_exchange_rate_latest AS
-                SELECT 
-                    fromCurrency,
-                    toCurrency,
-                    MAX(date) AS 'fecha_ultima',
-                    (SELECT rate FROM DimExchangeRate der2 
-                     WHERE der2.fromCurrency = der1.fromCurrency 
-                     AND der2.toCurrency = der1.toCurrency
-                     AND der2.date = MAX(der1.date)) AS 'tasa_ultima'
-                FROM DimExchangeRate der1
-                GROUP BY fromCurrency, toCurrency;
-            """)
-            
-            cursor.close()
-            self.conn.commit()
-            
-            print("[✅] Vista vw_exchange_rate_latest creada")
-            print()
-            print("Uso desde ETL:")
-            print("  SELECT tasa_ultima FROM vw_exchange_rate_latest")
-            print("  WHERE fromCurrency = 'CRC' AND toCurrency = 'USD'")
-            
-        except Exception as e:
-            print(f"[⚠️ ] Error creando vista: {e}")
-    
-    def mostrar_ejemplo_uso(self):
-        """Muestra ejemplos de cómo usar la tabla"""
-        print()
-        print("=" * 80)
-        print("EJEMPLOS DE USO PARA LOS ETLs")
-        print("=" * 80)
-        print()
-        
-        print("1. OBTENER TASA PARA UNA FECHA ESPECIFICA:")
-        print("-" * 80)
-        print("""
-    SELECT rate 
-    FROM DimExchangeRate
-    WHERE fromCurrency = 'CRC'
-    AND toCurrency = 'USD'
-    AND date = CAST(GETDATE() AS DATE)
-        """)
-        
-        print("\n2. OBTENER TASA MAS RECIENTE:")
-        print("-" * 80)
-        print("""
-    SELECT TOP 1 rate 
-    FROM DimExchangeRate
-    WHERE fromCurrency = 'CRC'
-    AND toCurrency = 'USD'
-    ORDER BY date DESC
-        """)
-        
-        print("\n3. OBTENER TASA APROXIMADA (Si no existe exactamente para esa fecha):")
-        print("-" * 80)
-        print("""
-    SELECT TOP 1 rate 
-    FROM DimExchangeRate
-    WHERE fromCurrency = 'CRC'
-    AND toCurrency = 'USD'
-    AND date <= @fecha_transaccion
-    ORDER BY date DESC
-        """)
-        
-        print("\n4. USAR EN JOIN CON FACT TABLE:")
-        print("-" * 80)
-        print("""
-    SELECT 
-        fs.*,
-        der.rate,
-        fs.lineTotalUSD * der.rate AS 'monto_convertido'
-    FROM FactSales fs
-    INNER JOIN DimExchangeRate der 
-        ON fs.timeId = CAST(der.date AS INT)
-        AND der.fromCurrency = 'CRC'
-        AND der.toCurrency = 'USD'
-        """)
-        
-        print()
-        print("=" * 80)
-    
-    def ejecutar(self):
-        """Ejecuta el flujo completo"""
-        if not self.conectar():
+    def insert_exchange_rate(self, fecha, tasa):
+        """Inserta o actualiza tasa en DimExchangeRate"""
+        connection = self.connect_to_database()
+        if not connection:
             return False
         
         try:
-            if not self.cargar_historico_3_anos():
-                return False
+            cursor = connection.cursor()
             
-            self.crear_vista_consulta_rapida()
-            self.mostrar_ejemplo_uso()
+            # Verificar si existe
+            cursor.execute("""
+                SELECT rate FROM DimExchangeRate 
+                WHERE fromCurrency = 'CRC' 
+                AND toCurrency = 'USD' 
+                AND date = ?
+            """, fecha)
+            existing = cursor.fetchone()
             
+            if existing:
+                # Actualizar
+                cursor.execute("""
+                    UPDATE DimExchangeRate 
+                    SET rate = ? 
+                    WHERE fromCurrency = 'CRC' 
+                    AND toCurrency = 'USD' 
+                    AND date = ?
+                """, tasa, fecha)
+            else:
+                # Insertar
+                cursor.execute("""
+                    INSERT INTO DimExchangeRate (fromCurrency, toCurrency, date, rate)
+                    VALUES ('CRC', 'USD', ?, ?)
+                """, fecha, tasa)
+            
+            connection.commit()
             return True
+            
+        except pyodbc.Error as e:
+            logger.error(f"❌ Error en BD: {e}")
+            connection.rollback()
+            return False
         finally:
-            self.cerrar()
+            connection.close()
+    
+    def populate_historical_data(self):
+        """Carga 3 años de histórico de tipos de cambio"""
+        
+        end_date = datetime.date.today()
+        start_date = end_date - datetime.timedelta(days=3*365)
+        
+        print("\n" + "=" * 80)
+        print("CARGANDO HISTORICO DE TIPOS DE CAMBIO DESDE BCCR")
+        print("=" * 80)
+        print(f"\nPeríodo: {start_date} a {end_date}")
+        print(f"Token: {self.bccr_password}\n")
+        
+        logger.info(f"Obteniendo datos históricos desde {start_date} hasta {end_date}")
+        
+        # Obtener de 180 en 180 días para no sobrecargar API
+        current_date = start_date
+        total_insertados = 0
+        
+        while current_date < end_date:
+            chunk_end = min(current_date + datetime.timedelta(days=180), end_date)
+            
+            logger.info(f"Procesando chunk: {current_date} a {chunk_end}")
+            exchange_rates = self.get_exchange_rate_data(current_date, chunk_end)
+            
+            for rate_data in exchange_rates:
+                if self.insert_exchange_rate(rate_data['fecha'], rate_data['tasa']):
+                    total_insertados += 1
+            
+            current_date = chunk_end + datetime.timedelta(days=1)
+            time.sleep(2)  # Esperar entre requests
+        
+        print(f"\n{'=' * 80}")
+        print(f"[✅] CARGA COMPLETADA: {total_insertados} registros insertados")
+        print(f"{'=' * 80}\n")
+        
+        logger.info("Población de datos históricos completada")
+    
+    def update_current_rate(self):
+        """Actualiza el tipo de cambio actual"""
+        today = datetime.date.today()
+        yesterday = today - datetime.timedelta(days=1)
+        
+        logger.info(f"Actualizando tipo de cambio para hoy")
+        
+        exchange_rates = self.get_exchange_rate_data(yesterday, today)
+        
+        if exchange_rates:
+            latest_rate = max(exchange_rates, key=lambda x: x['fecha'])
+            if self.insert_exchange_rate(latest_rate['fecha'], latest_rate['tasa']):
+                logger.info(f"✅ Tipo de cambio actualizado: {latest_rate['tasa']}")
+            else:
+                logger.error("❌ Error actualizando tipo de cambio")
+        else:
+            logger.warning("⚠️  No se pudo obtener el tipo de cambio actual")
+
+
+def main():
+    loader = BCCRExchangeRateLoader()
+    
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        
+        if command == "populate":
+            loader.populate_historical_data()
+        elif command == "update-current":
+            loader.update_current_rate()
+        else:
+            print("Comandos disponibles:")
+            print("  python cargar_historico_tipos_cambio.py populate")
+            print("  python cargar_historico_tipos_cambio.py update-current")
+    else:
+        loader.populate_historical_data()
 
 
 if __name__ == "__main__":
-    print()
-    print("╔" + "=" * 78 + "╗")
-    print("║" + " CARGA DE HISTORICO DE TIPOS DE CAMBIO (3 AÑOS) ".center(78) + "║")
-    print("║" + " para DimExchangeRate en MSSQL_DW ".center(78) + "║")
-    print("╚" + "=" * 78 + "╝")
-    print()
-    
-    loader = HistoricoTiposCambio()
-    success = loader.ejecutar()
-    
-    if success:
-        print("\n[✅] Proceso completado exitosamente")
-        sys.exit(0)
-    else:
-        print("\n[❌] Proceso finalizado con errores")
-        sys.exit(1)
+    main()
+
