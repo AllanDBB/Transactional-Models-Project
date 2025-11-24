@@ -1,65 +1,12 @@
 import os
 from datetime import datetime, date, timedelta
 
-from supabase import create_client, Client
-import pyodbc
+from conexion import *
 
 
-# ===============================
-#  CONFIG
-# ===============================
-TEST_EXCHANGE_RATE = 515.0  # o 1.0 si quieres no convertir nada
-USE_FIXED_EXCHANGE_RATE = True
-
-LOG_FILE_PATH = "SUPABASE/etl/etl_processed_dates.log"  # archivo simple con una fecha por línea (YYYY-MM-DD)
-
-
-SUPABASE_URL = "https://vzcwfryxmtzocmjpayfz.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y3dmcnl4bXR6b2NtanBheWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2NDg2NDQsImV4cCI6MjA3ODIyNDY0NH0.Azkwt-2uzwOVql0Cv-b0juvCK5ZPs7A-HT9QsPfGcWg"
-
-# Ajusta el DRIVER si usas otro:
-MSSQL_CONNECTION_STRING = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=localhost,1434;"
-    "DATABASE=MSSQL_DW;"
-    "UID=sa;"
-    "PWD=BasesDatos2!;"
-    "TrustServerCertificate=yes;"
-)
-
-
-# ===============================
-#  HELPERS DE CONEXIÓN
-# ===============================
-
-def get_supabase_client() -> Client:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise RuntimeError("Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY en el entorno.")
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-def get_dw_connection():
-    conn = pyodbc.connect(MSSQL_CONNECTION_STRING)
-    conn.autocommit = False  # manejamos transacción manualmente
-    return conn
-
-
-# ===============================
-#  UTILIDADES VARIAS
-# ===============================
-
-def normalize_gender(genero: str) -> str:
-    if genero == 'M':
-        return 'M'
-    if genero == 'F':
-        return 'F'
-    return 'O'
-
+LOG_FILE_PATH = "SUPABASE/etl/etl_processed_dates.log"
 
 def map_channel_type(canal: str) -> str:
-    """
-    Mapea el canal de Supabase a channelType de DimChannel.
-    """
     if canal == 'WEB':
         return 'Website'
     if canal == 'APP':
@@ -69,14 +16,38 @@ def map_channel_type(canal: str) -> str:
     return 'Other'
 
 
-def generate_sku_for_product(product_row: dict) -> str:
-    """
-    Generar SKU para productos de Supabase que vienen sin sku.
-    DEJA ESTE TODO COMO ACORDAMOS: tú defines el formato real.
-    """
-    # ⚠️ TODO: definir el formato real de SKU para productos sin sku.
-    # Ejemplo temporal (cámbialo por algo serio para el proyecto):
-    return f"TODO_SKU_{product_row['producto_id']}"
+def generate_sku_for_product(cursor, product_row: dict) -> str:
+    # Buscar el último servicio ya creado (S + 4 dígitos), ordenado desc
+    cursor.execute(
+        """
+        SELECT TOP 1 code
+        FROM DimProduct
+        WHERE code LIKE 'S____'
+        ORDER BY code DESC;
+        """
+    )
+    row = cursor.fetchone()
+
+    last_number = 0
+    if row and row[0]:
+        last_code = str(row[0])
+
+        # Esperamos algo como "S0007"
+        if last_code[0].upper() == "S" and len(last_code) >= 2:
+            try:
+                last_number = int(last_code[1:])  # convierte "0007" → 7
+            except ValueError:
+                # Si por alguna razón el código no es numérico después de la S, empezamos desde 0
+                last_number = 0
+
+    new_number = last_number + 1
+    if new_number > 9999:
+        raise RuntimeError("Se alcanzó el máximo de códigos de servicio (S9999).")
+
+    # Formato: S + 4 dígitos, con ceros a la izquierda (S0001, S0002, ...)
+    new_code = f"S{new_number:04d}"
+    return new_code
+
 
 
 # ===============================
@@ -84,10 +55,6 @@ def generate_sku_for_product(product_row: dict) -> str:
 # ===============================
 
 def load_processed_dates() -> set[date]:
-    """
-    Lee el archivo LOG_FILE_PATH y devuelve un set de fechas YA procesadas.
-    Formato del archivo: una fecha por línea, en YYYY-MM-DD.
-    """
     processed = set()
     if not os.path.exists(LOG_FILE_PATH):
         return processed
@@ -124,7 +91,7 @@ def append_processed_dates(new_dates: set[date]) -> None:
 # ===============================
 
 def get_or_create_customer(cursor, nombre, email, genero, pais, fecha_registro) -> int:
-    # 1. Buscar primero por email en DimCustomer
+    # 1 buscar por emial
     cursor.execute(
         "SELECT id FROM DimCustomer WHERE email = ?",
         (email,)
@@ -133,10 +100,10 @@ def get_or_create_customer(cursor, nombre, email, genero, pais, fecha_registro) 
     if row:
         return int(row[0])
 
-    # 2. Si no existe, insertar
-    gender_norm = normalize_gender(genero)
+    # 2 si no existe, inserta
+    gender_norm = genero
 
-    # fecha_registro te la paso como date desde run_etl, aquí la convierto a datetime
+    #convertir fecharegistro a datetime para poder meterlo en createdat
     if isinstance(fecha_registro, datetime):
         created_at = fecha_registro
     else:
@@ -188,7 +155,7 @@ def get_or_create_product(cursor, product_row: dict, category_id: int) -> int:
     nombre = product_row["nombre"]
 
     if sku:
-        # Buscar por SKU (code)
+        # Buscar por SKU
         cursor.execute(
             "SELECT id FROM DimProduct WHERE code = ?",
             (sku,)
@@ -197,7 +164,7 @@ def get_or_create_product(cursor, product_row: dict, category_id: int) -> int:
         if row:
             return int(row[0])
 
-        # No existe, insertar nuevo con ese sku
+        # si no existe, insertar nuevo con ese sku
         cursor.execute(
             """
             INSERT INTO DimProduct (name, code, categoryId)
@@ -211,7 +178,7 @@ def get_or_create_product(cursor, product_row: dict, category_id: int) -> int:
             raise RuntimeError("No se pudo obtener el ID insertado para DimProduct (con sku)")
         return int(new_id_row[0])
 
-    # Caso sku NULL: buscar por nombre+categoria
+    # si el sku es null, buscar por nombre y categoria
     cursor.execute(
         """
         SELECT id FROM DimProduct
@@ -224,7 +191,7 @@ def get_or_create_product(cursor, product_row: dict, category_id: int) -> int:
         return int(row[0])
 
     # No existe: generar un SKU (TODO) e insertar
-    generated_sku = generate_sku_for_product(product_row)
+    generated_sku = generate_sku_for_product(cursor, product_row)
 
     cursor.execute(
         """
@@ -239,7 +206,6 @@ def get_or_create_product(cursor, product_row: dict, category_id: int) -> int:
         raise RuntimeError("No se pudo obtener el ID insertado para DimProduct (sin sku)")
     return int(new_id_row[0])
 
-
 def get_or_create_time(cursor, fecha: date) -> int:
     cursor.execute(
         "SELECT id FROM DimTime WHERE date = ?",
@@ -247,22 +213,24 @@ def get_or_create_time(cursor, fecha: date) -> int:
     )
     row = cursor.fetchone()
     if row:
-        return row[0]
+        return int(row[0])
 
     year = fecha.year
     month = fecha.month
     day = fecha.day
-    # Por ejemplo, usamos YYYYMMDD como surrogate key
-    time_id = year * 10000 + month * 100 + day
 
     cursor.execute(
         """
-        INSERT INTO DimTime (id, year, month, day, date)
-        VALUES (?, ?, ?, ?, ?);
+        INSERT INTO DimTime (year, month, day, date)
+        OUTPUT INSERTED.id
+        VALUES (?, ?, ?, ?);
         """,
-        (time_id, year, month, day, fecha)
+        (year, month, day, fecha)
     )
-    return time_id
+    new_row = cursor.fetchone()
+
+    return int(new_row[0])
+
 
 
 def get_or_create_channel(cursor, canal_supabase: str) -> int:
@@ -292,10 +260,6 @@ def get_or_create_channel(cursor, canal_supabase: str) -> int:
 
 
 def get_exchange_rate_for_date(cursor, fecha: date):
-    """
-    Devuelve (exchangeRateId, rate) desde DimExchangeRate para la fecha dada.
-    Asume fromCurrency='CRC', toCurrency='USD'.
-    """
     cursor.execute(
         """
         SELECT id, rate
@@ -467,12 +431,8 @@ def run_etl_supabase_to_dw(effective_dates: set[date]):
             # DimChannel
             channel_id = get_or_create_channel(cursor, canal)
 
-            # DimExchangeRate (modo test / real) se queda igual que ya lo tienes
-            if USE_FIXED_EXCHANGE_RATE:
-                exchange_rate_id = None
-                rate_value = TEST_EXCHANGE_RATE
-            else:
-                exchange_rate_id, rate_value = get_exchange_rate_for_date(cursor, fecha_only)
+            # DimExchangeRate
+            exchange_rate_id, rate_value = get_exchange_rate_for_date(cursor, fecha_only)
 
             # Normalizar total a USD
             if moneda == "USD":
