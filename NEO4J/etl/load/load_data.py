@@ -115,7 +115,17 @@ class DataLoader:
     def load_dim_product(self, df: pd.DataFrame, category_map: Dict) -> None:
         df_load = df[["name", "code", "categoryId"]].copy()
         df_load["categoryId"] = df_load["categoryId"].map(category_map).fillna(0).astype("Int64")
-        self._load_dataframe(df_load, "DimProduct", ["name", "code", "categoryId"])
+        df_load = df_load.drop_duplicates(subset=["code"])
+
+        with pyodbc.connect(self.connection_string) as conn:
+            cursor = conn.cursor()
+            existentes = {row[0] for row in cursor.execute("SELECT code FROM DimProduct").fetchall()}
+        df_load = df_load[~df_load["code"].isin(existentes)]
+
+        if not df_load.empty:
+            self._load_dataframe(df_load, "DimProduct", ["name", "code", "categoryId"])
+        else:
+            logger.info("DimProduct ya contenA-a todos los registros, no se insertA3 nada")
 
     def load_dim_customer(self, df: pd.DataFrame) -> None:
         df = df.copy()
@@ -144,7 +154,7 @@ class DataLoader:
             max_id = cursor.execute("SELECT ISNULL(MAX(id), 0) FROM DimTime").fetchval()
         df = df[~df["date"].isin(existentes)]
 
-        # Reasignar ids consecutivos a partir del max existente para evitar choques de PK
+        # Reasignar ids consecutivos para nuevas fechas evitando choques de PK
         df = df.sort_values("date")
         df["id"] = range(int(max_id) + 1, int(max_id) + 1 + len(df))
 
@@ -179,6 +189,9 @@ class DataLoader:
         with pyodbc.connect(self.connection_string) as conn:
             cursor = conn.cursor()
 
+            df = df_source.copy()
+            df = df.drop_duplicates(subset=["source_system", "source_key"])
+
             dest_map = {}
             if tabla == "DimCustomer":
                 cursor.execute("SELECT email, id FROM DimCustomer")
@@ -190,9 +203,6 @@ class DataLoader:
                 key_column = "code"
             else:
                 key_column = "id"
-
-            df = df_source.copy()
-            df = df.drop_duplicates(subset=["source_system", "source_key"])
 
             existentes = {
                 (row[0], row[1], row[2])

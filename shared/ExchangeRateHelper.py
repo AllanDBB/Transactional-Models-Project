@@ -113,7 +113,7 @@ class ExchangeRateHelper:
                 tasa = float(row[0])
                 # Guardar en cache
                 self.cache[cache_key] = tasa
-                logger.debug(f"[DB] Tasa obtenida: {de_moneda} → {a_moneda} = {tasa}")
+                logger.debug(f"[DB] Tasa obtenida: {de_moneda} -> {a_moneda} = {tasa}")
                 return tasa
             
             cursor.close()
@@ -143,7 +143,7 @@ class ExchangeRateHelper:
                 return tasa
             
             cursor.close()
-            logger.error(f"No existe tasa para {de_moneda} → {a_moneda}")
+            logger.error(f"No existe tasa para {de_moneda} -> {a_moneda}")
             return None
             
         except Exception as e:
@@ -196,7 +196,7 @@ class ExchangeRateHelper:
             if row:
                 tasa = float(row[0])
                 self.cache[cache_key] = tasa
-                logger.info(f"Tasa reciente: {de_moneda} → {a_moneda} = {tasa}")
+                logger.info(f"Tasa reciente: {de_moneda} -> {a_moneda} = {tasa}")
                 return tasa
             
             return None
@@ -213,37 +213,20 @@ class ExchangeRateHelper:
         fecha: Optional[date] = None
     ) -> Optional[float]:
         """
-        Convierte un monto de una moneda a otra
-        
-        Args:
-            monto: Cantidad a convertir
-            de_moneda: Moneda origen
-            a_moneda: Moneda destino
-            fecha: Fecha de conversión
-        
-        Returns:
-            float: Monto convertido o None si error
-        
-        Ejemplo:
-            usd = helper.convertir_monto(1000, 'CRC', 'USD', date(2024, 1, 15))
-            # usd ≈ 1.67 (si tasa ≈ 600)
+        Convierte un monto de una moneda a otra.
         """
-        
-        # Si es la misma moneda, retornar sin cambios
         if de_moneda == a_moneda:
             return monto
-        
+
         tasa = self.obtener_tasa_para_fecha(de_moneda, a_moneda, fecha)
-        
         if tasa is None:
-            logger.error(f"No se pudo obtener tasa para {de_moneda} → {a_moneda}")
+            logger.error(f"No se pudo obtener tasa para {de_moneda} -> {a_moneda}")
             return None
-        
-        monto_convertido = monto / tasa  # Dividir porque la tasa es de_moneda → USD
-        logger.debug(f"Conversión: {monto} {de_moneda} → {monto_convertido:.2f} {a_moneda}")
-        
+
+        monto_convertido = monto / tasa  # la tasa es de_moneda -> USD
+        logger.debug(f"Conversion: {monto} {de_moneda} -> {monto_convertido:.2f} {a_moneda}")
         return monto_convertido
-    
+
     def obtener_rango_tasas(
         self,
         de_moneda: str,
@@ -317,12 +300,12 @@ if __name__ == "__main__":
         # Ejemplo 1: Obtener tasa para una fecha
         print("[EJEMPLO 1] Obtener tasa para fecha específica:")
         tasa = helper.obtener_tasa_para_fecha('CRC', 'USD', date(2024, 1, 15))
-        print(f"  CRC → USD (2024-01-15) = {tasa}\n")
+        print(f"  CRC -> USD (2024-01-15) = {tasa}\n")
         
         # Ejemplo 2: Obtener tasa reciente
         print("[EJEMPLO 2] Obtener tasa más reciente:")
         tasa_reciente = helper.obtener_tasa_reciente('EUR', 'USD')
-        print(f"  EUR → USD (más reciente) = {tasa_reciente}\n")
+        print(f"  EUR -> USD (mas reciente) = {tasa_reciente}\n")
         
         # Ejemplo 3: Convertir monto
         print("[EJEMPLO 3] Convertir monto:")

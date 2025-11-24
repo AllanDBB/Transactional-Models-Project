@@ -1,5 +1,5 @@
 """
-Orquestador del ETL MongoDB -> DWH MSSQL aplicando las 5 reglas.
+Orquestador del ETL Neo4j -> DWH MSSQL aplicando las 5 reglas.
 """
 import logging
 import sys
@@ -10,15 +10,11 @@ from extract.extract_data import DataExtractor
 from load.load_data import DataLoader
 from transform.transform_data import DataTransformer
 
-# Shared helper para tipos de cambio (carpeta shared en raíz del repo)
+# Shared helper de tipos de cambio
 root_path = Path(__file__).resolve().parents[2]
 shared_path = root_path / "shared"
 sys.path.insert(0, str(shared_path))
-try:
-    from ExchangeRateHelper import ExchangeRateHelper  # type: ignore
-except Exception:
-    sys.path.insert(0, str(shared_path))
-    from ExchangeRateHelper import ExchangeRateHelper  # type: ignore
+from ExchangeRateHelper import ExchangeRateHelper  # type: ignore
 
 
 def setup_logging():
@@ -33,7 +29,7 @@ def setup_logging():
 def run_etl() -> bool:
     logger = setup_logging()
     logger.info("=" * 80)
-    logger.info("INICIANDO ETL: MongoDB -> MSSQL_DW")
+    logger.info("INICIANDO ETL: Neo4j -> MSSQL_DW")
     logger.info("=" * 80)
 
     try:
@@ -42,24 +38,8 @@ def run_etl() -> bool:
         transformer = DataTransformer(exchange_helper)
         loader = DataLoader(DWConfig.connection_string())
 
-        # Extract
         clientes_raw, productos_raw, ordenes_raw, detalle_raw = extractor.extract()
 
-        # Limpiar tablas para entorno de prueba
-        loader.truncate_tables([
-            'FactSales',
-            'DimOrder',
-            'DimProduct',
-            'DimCustomer',
-            'DimChannel',
-            'DimCategory',
-            'DimTime',
-            'staging_source_tracking',
-            'staging_map_producto',
-            'staging_tipo_cambio',
-        ])
-
-        # Transform
         clientes, _ = transformer.transform_clientes(clientes_raw)
         productos, _ = transformer.transform_productos(productos_raw)
         ordenes, _ = transformer.transform_ordenes(ordenes_raw)
@@ -70,7 +50,6 @@ def run_etl() -> bool:
         dim_time = transformer.generate_dimtime(ordenes)
         product_mapping = transformer.build_product_mapping(productos)
 
-        # Load
         logger.info("[Cargando Dimensiones]")
         loader.load_dim_category(categorias)
         loader.load_dim_channel(canales)
@@ -98,15 +77,14 @@ def run_etl() -> bool:
 
         logger.info("[Cargando Staging]")
         loader.load_staging_product_mapping(product_mapping)
-        # Sincronizar tasas diarias si existen en DataFrame (no se genera aquí)
-
         loader.load_source_tracking("DimCustomer", clientes)
         loader.load_source_tracking("DimProduct", productos)
 
-        logger.info("[OK] ETL MongoDB completado")
+        extractor.close()
+        logger.info("[OK] ETL Neo4j completado")
         return True
     except Exception as exc:  # pragma: no cover - logging de error
-        logger.exception("Error ejecutando ETL MongoDB: %s", exc)
+        logger.exception("Error ejecutando ETL Neo4j: %s", exc)
         return False
 
 

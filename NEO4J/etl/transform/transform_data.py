@@ -33,11 +33,22 @@ class DataTransformer:
     def __init__(self, exchange_helper):
         self.exchange_helper = exchange_helper
 
+    @staticmethod
+    def _normalize_datetime(series: pd.Series) -> pd.Series:
+        """Convierte objetos Neo4j DateTime u otros en pandas datetime."""
+        return pd.to_datetime(
+            series.apply(lambda x: x.to_native() if hasattr(x, 'to_native') else x),
+            errors='coerce',
+        )
+
     def transform_clientes(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         logger.info("Transformando clientes (regla 3)...")
         df = df.copy()
 
-        source_key = df["_id"].astype(str)
+        id_series = df["_id"] if "_id" in df else df.get("id")
+        if id_series is None:
+            id_series = pd.Series(range(1, len(df) + 1), index=df.index)
+        source_key = id_series.astype(str)
 
         def pick_series(candidates, default=""):
             for col in candidates:
@@ -91,7 +102,11 @@ class DataTransformer:
         df = df.copy()
 
         df["source_system"] = self.SOURCE_SYSTEM
-        df["source_key"] = df["_id"].astype(str)
+        id_series = df["_id"] if "_id" in df else df.get("id")
+        if id_series is None:
+            id_series = pd.Series(range(1, len(df) + 1), index=df.index)
+        df["source_key"] = id_series.astype(str)
+        df["id"] = id_series
 
         base_codigo = df.get("codigo_mongo", pd.Series([""] * len(df), index=df.index))
         base_codigo = base_codigo.replace(np.nan, "")
@@ -132,9 +147,12 @@ class DataTransformer:
         df = df.copy()
 
         df["source_system"] = self.SOURCE_SYSTEM
-        df["source_key"] = df["_id"].astype(str)
+        id_series = df["_id"] if "_id" in df else df.get("id")
+        if id_series is None:
+            id_series = pd.Series(range(1, len(df) + 1), index=df.index)
+        df["source_key"] = id_series.astype(str)
 
-        df["Fecha"] = pd.to_datetime(df.get("fecha"), errors="coerce")
+        df["Fecha"] = self._normalize_datetime(df.get("fecha"))
         df["Canal"] = df.get("canal", "").astype(str).str.strip().str.upper()
         df["Moneda"] = df.get("moneda", "CRC").astype(str).str.upper()
 
@@ -183,7 +201,7 @@ class DataTransformer:
         df["Cantidad"] = pd.to_numeric(df.get("cantidad"), errors="coerce")
         df["PrecioUnit"] = pd.to_numeric(df.get("precio_unit"), errors="coerce")
         df["Moneda"] = df.get("moneda", "CRC").astype(str).str.upper()
-        df["Fecha"] = pd.to_datetime(df.get("fecha"), errors="coerce")
+        df["Fecha"] = self._normalize_datetime(df.get("fecha"))
 
         df = df.dropna(subset=["Cantidad", "PrecioUnit", "Fecha"])
         df = df[(df["Cantidad"] > 0) & (df["PrecioUnit"] >= 0)]

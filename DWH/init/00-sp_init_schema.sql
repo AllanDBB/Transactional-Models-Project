@@ -125,6 +125,7 @@ BEGIN
         
         CREATE TABLE DimChannel (
             id INT IDENTITY(1,1) PRIMARY KEY,
+            name VARCHAR(50) NULL,
             channelType VARCHAR(50),
             CONSTRAINT chk_channel_type CHECK (channelType IN ('Website', 'Store', 'App', 'Partner', 'Other'))
         );
