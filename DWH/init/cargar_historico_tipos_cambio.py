@@ -32,11 +32,16 @@ class BCCRExchangeRateLoader:
         self.bccr_password = os.getenv("BCCR_PASSWORD")
         
         # Variables SQL Server
-        self.server = os.getenv("serverenv", "localhost")
+        self.server = os.getenv("serverenv", "localhost,1434")
         self.database = os.getenv("databaseenv", "MSSQL_DW")
         self.username = os.getenv("usernameenv", "sa")
-        self.password = os.getenv("passwordenv")
-        
+        self.password = os.getenv("passwordenv", "BasesDatos2!")
+    
+
+        print(f"Conectando a SQL Server en {self.server}, base de datos {self.database}")
+        print(f"Usuario SQL Server: {self.username}")
+        print(f"Contraseña SQL Server: {self.password}")
+        time.sleep(3)
         # Driver ODBC
         if platform.system() == "Windows":
             self.driver = "ODBC Driver 17 for SQL Server"
