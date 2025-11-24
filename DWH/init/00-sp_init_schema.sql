@@ -86,7 +86,7 @@ BEGIN
         -- ================================================================
         
         CREATE TABLE DimTime (
-            id INT PRIMARY KEY,
+            id INT IDENTITY(1,1) PRIMARY KEY,
             year INT NOT NULL,
             month INT NOT NULL,
             day INT NOT NULL,
