@@ -20,17 +20,17 @@ class DataTransformer:
     """Transforma y normaliza datos según las 5 reglas de integración ETL"""
     
     # REGLA 3: Mapeo de generos (estandarizacion)
-    # Regla: M|Masculino -> Masculino, F|Femenino -> Femenino, X|Otro|NULL -> No especificado
+    # Regla: M|Masculino -> M, F|Femenino -> F, X|Otro|NULL -> O
     GENDER_MAPPING = {
-        'M': 'Masculino',
-        'F': 'Femenino',
-        'X': 'No especificado',
-        'Masculino': 'Masculino',
-        'Femenino': 'Femenino',
-        'Otro': 'No especificado',
-        None: 'No especificado',
-        'NULL': 'No especificado',
-        '': 'No especificado'
+        'M': 'M',
+        'F': 'F',
+        'X': 'O',
+        'Masculino': 'M',
+        'Femenino': 'F',
+        'Otro': 'O',
+        None: 'O',
+        'NULL': 'O',
+        '': 'O'
     }
     
     # Constantes para trazabilidad
@@ -351,9 +351,9 @@ class DataTransformer:
         cursor.execute("SELECT id, email FROM DimCustomer")
         customer_map = {email: id for id, email in cursor.fetchall()}
         
-        # Mapear channel → DimChannel.id
-        cursor.execute("SELECT id, name FROM DimChannel")
-        channel_map = {name: id for id, name in cursor.fetchall()}
+        # Mapear channelType → DimChannel.id
+        cursor.execute("SELECT id, channelType FROM DimChannel")
+        channel_map = {channelType: id for id, channelType in cursor.fetchall()}
         
         # Mapear date → DimTime.id
         cursor.execute("SELECT id, date FROM DimTime")
@@ -362,10 +362,18 @@ class DataTransformer:
         cursor.close()
         conn.close()
         
+        # Mapear nombres de canal a channelType antes de buscar IDs
+        channel_type_map = {
+            'WEB': 'Website',
+            'TIENDA': 'Store',
+            'APP': 'App'
+        }
+        df_fact['channelType'] = df_fact['channel'].map(lambda x: channel_type_map.get(x, 'Other'))
+        
         # Aplicar mapeos
         df_fact['productId_dwh'] = df_fact['code'].map(product_map)
         df_fact['customerId_dwh'] = df_fact['email'].map(customer_map)
-        df_fact['channelId'] = df_fact['channel'].map(channel_map)
+        df_fact['channelId'] = df_fact['channelType'].map(channel_map)
         df_fact['timeId'] = df_fact['date'].astype(str).map(time_map)
         
         # Crear orderId secuencial (DimOrder ya se cargó)

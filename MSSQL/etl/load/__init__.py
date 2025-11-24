@@ -145,7 +145,7 @@ class DataLoader:
         df_canales = df_canales.copy()
         df_canales['channelType'] = df_canales['name'].map(self._map_channel_type)
         
-        self._load_dataframe(df_canales, 'DimChannel', ['name', 'channelType'])
+        self._load_dataframe(df_canales, 'DimChannel', ['channelType'])
     
     def load_dim_product(self, df_productos: pd.DataFrame, category_map: Dict = None) -> None:
         """
@@ -209,7 +209,7 @@ class DataLoader:
         df['date'] = pd.to_datetime(df['date']).dt.date
         
         self._load_dataframe(df, 'DimTime', 
-                           ['id', 'year', 'month', 'day', 'date', 'exchangeRateToUSD'],
+                           ['id', 'year', 'month', 'day', 'date'],
                            identity=False)
     
     def load_dim_order(self, df_ordenes: pd.DataFrame) -> None:

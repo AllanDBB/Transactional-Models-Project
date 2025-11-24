@@ -34,8 +34,8 @@ class DatabaseConfig:
         'server': os.getenv('MSSQL_DW_SERVER', 'localhost'),
         'port': int(os.getenv('MSSQL_DW_PORT', '1434')),  # Puerto DWH (1434)
         'database': 'MSSQL_DW',
-        'uid': os.getenv('MSSQL_DW_USER', 'admin'),
-        'pwd': os.getenv('MSSQL_DW_PASSWORD', 'admin123')
+        'uid': os.getenv('MSSQL_DW_USER', 'sa'),
+        'pwd': os.getenv('MSSQL_DW_PASSWORD', 'BasesDatos2!')
     }
     
     @staticmethod

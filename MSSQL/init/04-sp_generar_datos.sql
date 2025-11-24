@@ -87,7 +87,7 @@ BEGIN
         )
         INSERT INTO sales_ms.Producto (SKU, Nombre, Categoria)
         SELECT 
-            'SKU-' + FORMAT(Num, '00000'),
+            FORMAT(Num, '00000'),
             CASE 
                 WHEN Num % 5 = 0 THEN 'Laptop Pro ' + CAST(Num AS NVARCHAR(10))
                 WHEN Num % 5 = 1 THEN 'Monitor 27" ' + CAST(Num AS NVARCHAR(10))
