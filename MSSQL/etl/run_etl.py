@@ -127,9 +127,9 @@ def run_etl():
         loader.load_dim_time(dim_time)
         loader.load_dim_product(productos_trans, category_map)
         
-        # Cargar DimOrder (antes de FactSales)
+        # Cargar DimOrder (antes de FactSales) - retorna mapeo de órdenes
         logger.info("\n[Cargando DimOrder]")
-        loader.load_dim_order(ordenes_trans)
+        order_tracking = loader.load_dim_order(ordenes_trans)
         
         # Construir y cargar FactSales (tabla de hechos)
         logger.info("\n[Construyendo FactSales]")
@@ -138,7 +138,8 @@ def run_etl():
             ordenes_trans,
             productos_trans,
             clientes_trans,
-            DatabaseConfig.get_dw_connection_string()
+            DatabaseConfig.get_dw_connection_string(),
+            order_tracking
         )
         loader.load_fact_sales(fact_sales)
         

@@ -255,7 +255,7 @@ class DataTransformer:
     
     def generate_dimtime(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
         """
-        Genera tabla DimTime con tipos de cambio
+        Genera tabla DimTime (sin id, es autoincremental)
         Para MSSQL: siempre USD, tasa = 1.0
         """
         logger.info("Generando DimTime...")
@@ -263,19 +263,16 @@ class DataTransformer:
         fechas = df_ordenes['date'].dt.date.unique()
         fechas = pd.to_datetime(fechas)
         
-        # Crear dimensión de tiempo
+        # Crear dimensión de tiempo (sin id, se auto-genera)
         dim_time = pd.DataFrame({
             'date': fechas,
             'year': fechas.year,
             'month': fechas.month,
-            'day': fechas.day,
-            'exchangeRateToUSD': 1.0  # MSSQL siempre USD
+            'day': fechas.day
         })
         
-        dim_time['id'] = range(1, len(dim_time) + 1)
-        
         logger.info(f"[OK] DimTime generada: {len(dim_time)} fechas")
-        return dim_time[['id', 'year', 'month', 'day', 'date', 'exchangeRateToUSD']]
+        return dim_time[['year', 'month', 'day', 'date']]
     
     def build_product_mapping(self, df_productos: pd.DataFrame) -> pd.DataFrame:
         """
@@ -297,7 +294,7 @@ class DataTransformer:
     
     def build_fact_sales(self, df_detalles: pd.DataFrame, df_ordenes: pd.DataFrame,
                         df_productos: pd.DataFrame, df_clientes: pd.DataFrame,
-                        dw_connection_string: str) -> pd.DataFrame:
+                        dw_connection_string: str, order_tracking: dict) -> pd.DataFrame:
         """
         Construye FactSales con FKs a las dimensiones del DWH
         
@@ -307,6 +304,7 @@ class DataTransformer:
             df_productos: DataFrame con productos transformados (para mapear code)
             df_clientes: DataFrame con clientes transformados (para mapear email)
             dw_connection_string: Conexión al DWH para obtener IDs de dimensiones
+            order_tracking: Diccionario {source_key: id_destino} de órdenes procesadas
         
         Returns:
             DataFrame listo para cargar en FactSales
@@ -376,11 +374,9 @@ class DataTransformer:
         df_fact['channelId'] = df_fact['channelType'].map(channel_map)
         df_fact['timeId'] = df_fact['date'].astype(str).map(time_map)
         
-        # Crear orderId secuencial (DimOrder ya se cargó)
-        df_fact = df_fact.sort_values('orderId')
-        orden_ids_unicos = df_fact['orderId'].unique()
-        orden_id_map = {old_id: new_id for new_id, old_id in enumerate(orden_ids_unicos, start=1)}
-        df_fact['orderId_dwh'] = df_fact['orderId'].map(orden_id_map)
+        # Mapear orderId usando el tracking recibido (incremental)
+        df_fact['source_order_key'] = df_fact['orderId'].astype(str)
+        df_fact['orderId_dwh'] = df_fact['source_order_key'].map(order_tracking)
         
         # Preparar DataFrame final
         from datetime import datetime

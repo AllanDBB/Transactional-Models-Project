@@ -39,7 +39,7 @@ BEGIN
         DELETE FROM staging_map_producto;
         -- NO limpiamos staging_tipo_cambio (datos del BCCR)
         
-        -- Resetear identidades
+        -- Resetear identidades (DimTime no tiene IDENTITY)
         DBCC CHECKIDENT ('DimCategory', RESEED, 0);
         DBCC CHECKIDENT ('DimChannel', RESEED, 0);
         DBCC CHECKIDENT ('DimCustomer', RESEED, 0);

@@ -47,14 +47,28 @@ class DataLoader:
             raise
     
     def load_staging_product_mapping(self, df_mapping: pd.DataFrame) -> None:
-        """REGLA 1: Carga tabla puente de mapeo de productos"""
+        """REGLA 1: Carga tabla puente de mapeo de productos (incremental)"""
         logger.info(f"Cargando mapeo de {len(df_mapping)} productos...")
         
         try:
             conn = pyodbc.connect(self.connection_string)
             cursor = conn.cursor()
             
-            for idx, row in df_mapping.iterrows():
+            # Obtener mapeos existentes (source_system + source_code)
+            cursor.execute("SELECT source_system, source_code FROM staging_map_producto")
+            existing = {(row[0], row[1]) for row in cursor.fetchall()}
+            
+            # Filtrar solo nuevos
+            df_new = df_mapping[~df_mapping.apply(lambda x: (x['source_system'], x['source_code']) in existing, axis=1)]
+            
+            if len(df_new) == 0:
+                logger.info("[OK] Todos los mapeos ya existen")
+                cursor.close()
+                conn.close()
+                return
+            
+            # Insertar solo nuevos
+            for idx, row in df_new.iterrows():
                 sql = f"""
                     INSERT INTO staging_map_producto (source_system, source_code, sku_oficial, descripcion, created_at)
                     VALUES ('{row['source_system']}', '{row['source_code']}', '{row['sku_oficial']}', '{row['descripcion']}', 
@@ -65,7 +79,7 @@ class DataLoader:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"[OK] {len(df_mapping)} mapeos de productos cargados")
+            logger.info(f"[OK] {len(df_new)} mapeos nuevos cargados")
         except Exception as e:
             logger.error(f"Error al cargar mapeo de productos: {str(e)}")
             raise
@@ -134,18 +148,67 @@ class DataLoader:
             raise
     
     def load_dim_category(self, df_categorias: pd.DataFrame) -> None:
-        """Carga DimCategory"""
+        """Carga DimCategory (incremental)"""
         logger.info(f"Cargando {len(df_categorias)} categorías...")
-        self._load_dataframe(df_categorias, 'DimCategory', ['name'])
+        
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
+        
+        # Obtener categorías existentes
+        cursor.execute("SELECT name FROM DimCategory")
+        existing = {row[0] for row in cursor.fetchall()}
+        
+        # Filtrar solo nuevas
+        df_new = df_categorias[~df_categorias['name'].isin(existing)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todas las categorías ya existen")
+            cursor.close()
+            conn.close()
+            return
+        
+        # Insertar solo nuevas
+        for idx, row in df_new.iterrows():
+            sql = f"INSERT INTO DimCategory (name) VALUES ('{row['name']}')"
+            cursor.execute(sql)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"[OK] {len(df_new)} categorías nuevas cargadas")
     
     def load_dim_channel(self, df_canales: pd.DataFrame) -> None:
-        """Carga DimChannel"""
+        """Carga DimChannel (incremental)"""
         logger.info(f"Cargando {len(df_canales)} canales...")
         
         df_canales = df_canales.copy()
         df_canales['channelType'] = df_canales['name'].map(self._map_channel_type)
         
-        self._load_dataframe(df_canales, 'DimChannel', ['channelType'])
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
+        
+        # Obtener channelTypes existentes
+        cursor.execute("SELECT channelType FROM DimChannel")
+        existing = {row[0] for row in cursor.fetchall()}
+        
+        # Filtrar solo nuevos
+        df_new = df_canales[~df_canales['channelType'].isin(existing)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todos los canales ya existen")
+            cursor.close()
+            conn.close()
+            return
+        
+        # Insertar solo nuevos
+        for idx, row in df_new.iterrows():
+            sql = f"INSERT INTO DimChannel (channelType) VALUES ('{row['channelType']}')"
+            cursor.execute(sql)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"[OK] {len(df_new)} canales nuevos cargados")
     
     def load_dim_product(self, df_productos: pd.DataFrame, category_map: Dict = None) -> None:
         """
@@ -188,41 +251,169 @@ class DataLoader:
             logger.warning("[WARN] Cargando productos sin mapeo de categoría (categoryId = NULL)")
             df_load['categoryId'] = None
         
-        self._load_dataframe(df_load, 'DimProduct', ['name', 'code', 'categoryId'])
+        # Incremental: solo insertar productos nuevos (por code/SKU)
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT code FROM DimProduct")
+        existing_codes = {row[0] for row in cursor.fetchall()}
+        
+        df_new = df_load[~df_load['code'].isin(existing_codes)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todos los productos ya existen")
+            cursor.close()
+            conn.close()
+            return
+        
+        # Insertar solo nuevos
+        for idx, row in df_new.iterrows():
+            cat_id = 'NULL' if pd.isna(row['categoryId']) else str(int(row['categoryId']))
+            sql = f"INSERT INTO DimProduct (name, code, categoryId) VALUES ('{row['name']}', '{row['code']}', {cat_id})"
+            cursor.execute(sql)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"[OK] {len(df_new)} productos nuevos cargados")
     
     def load_dim_customer(self, df_clientes: pd.DataFrame) -> None:
-        """Carga DimCustomer"""
+        """Carga DimCustomer (incremental por email)"""
         logger.info(f"Cargando {len(df_clientes)} clientes...")
         
         df_clientes = df_clientes.copy()
         df_clientes['created_at'] = pd.to_datetime(df_clientes['created_at'])
         
         df_load = df_clientes[['name', 'email', 'gender', 'country', 'created_at']].copy()
-        self._load_dataframe(df_load, 'DimCustomer', 
-                           ['name', 'email', 'gender', 'country', 'created_at'])
+        
+        # Incremental: solo insertar clientes nuevos (por email único)
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT email FROM DimCustomer")
+        existing_emails = {row[0] for row in cursor.fetchall()}
+        
+        df_new = df_load[~df_load['email'].isin(existing_emails)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todos los clientes ya existen")
+            cursor.close()
+            conn.close()
+            return
+        
+        # Insertar solo nuevos
+        for idx, row in df_new.iterrows():
+            sql = f"""INSERT INTO DimCustomer (name, email, gender, country, created_at) 
+                     VALUES ('{row['name']}', '{row['email']}', '{row['gender']}', '{row['country']}', '{row['created_at']}')"""
+            cursor.execute(sql)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"[OK] {len(df_new)} clientes nuevos cargados")
     
     def load_dim_time(self, df_dimtime: pd.DataFrame) -> None:
-        """Carga DimTime"""
+        """Carga DimTime (incremental, id es autoincremental)"""
         logger.info(f"Cargando {len(df_dimtime)} fechas...")
         
         df = df_dimtime.copy()
         df['date'] = pd.to_datetime(df['date']).dt.date
         
-        self._load_dataframe(df, 'DimTime', 
-                           ['id', 'year', 'month', 'day', 'date'],
-                           identity=False)
+        # Cargar solo fechas nuevas (evitar duplicados por UNIQUE constraint)
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
+        
+        # Obtener fechas existentes
+        cursor.execute("SELECT date FROM DimTime")
+        existing_dates = {row[0] for row in cursor.fetchall()}
+        
+        # Filtrar solo fechas nuevas
+        df_new = df[~df['date'].isin(existing_dates)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todas las fechas ya existen en DimTime")
+            cursor.close()
+            conn.close()
+            return
+        
+        logger.info(f"Insertando {len(df_new)} fechas nuevas...")
+        
+        # Insertar solo fechas nuevas
+        for idx, row in df_new.iterrows():
+            sql = f"""
+                INSERT INTO DimTime (year, month, day, date)
+                VALUES ({row['year']}, {row['month']}, {row['day']}, '{row['date']}')
+            """
+            cursor.execute(sql)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"[OK] {len(df_new)} fechas nuevas cargadas en DimTime")
     
-    def load_dim_order(self, df_ordenes: pd.DataFrame) -> None:
-        """Carga DimOrder"""
+    def load_dim_order(self, df_ordenes: pd.DataFrame) -> dict:
+        """Carga DimOrder (incremental usando staging_source_tracking)
+        
+        Returns:
+            dict: Mapeo {source_key: id_destino} de todas las órdenes procesadas
+        """
         logger.info(f"Cargando {len(df_ordenes)} órdenes...")
         
-        df_dim_order = df_ordenes[['totalOrderUSD']].copy()
+        conn = pyodbc.connect(self.connection_string)
+        cursor = conn.cursor()
         
-        self._load_dataframe(df_dim_order, 'DimOrder', ['totalOrderUSD'], identity=False)
+        # Obtener órdenes ya procesadas de MSSQL
+        cursor.execute("""
+            SELECT source_key FROM staging_source_tracking 
+            WHERE source_system = 'MSSQL' AND tabla_destino = 'DimOrder'
+        """)
+        processed_orders = {row[0] for row in cursor.fetchall()}
+        
+        # Filtrar solo órdenes nuevas
+        df_new = df_ordenes[~df_ordenes['source_key'].isin(processed_orders)]
+        
+        if len(df_new) == 0:
+            logger.info("[OK] Todas las órdenes ya fueron procesadas")
+        else:
+            logger.info(f"Insertando {len(df_new)} órdenes nuevas...")
+            
+            # Insertar órdenes nuevas y registrar tracking
+            for idx, row in df_new.iterrows():
+                # Insertar en DimOrder
+                cursor.execute(f"INSERT INTO DimOrder (totalOrderUSD) VALUES ({row['totalOrderUSD']})")
+                
+                # Obtener el ID generado
+                cursor.execute("SELECT @@IDENTITY")
+                order_id = cursor.fetchone()[0]
+                
+                # Registrar en tracking
+                cursor.execute(f"""
+                    INSERT INTO staging_source_tracking (source_system, source_key, tabla_destino, id_destino)
+                    VALUES ('MSSQL', '{row['source_key']}', 'DimOrder', {order_id})
+                """)
+            
+            conn.commit()
+            logger.info(f"[OK] {len(df_new)} órdenes nuevas cargadas")
+        
+        # Obtener el mapeo completo de todas las órdenes (incluyendo las recién insertadas)
+        cursor.execute("""
+            SELECT source_key, id_destino FROM staging_source_tracking 
+            WHERE source_system = 'MSSQL' AND tabla_destino = 'DimOrder'
+        """)
+        order_tracking = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        cursor.close()
+        conn.close()
+        
+        return order_tracking
     
     def load_fact_sales(self, df_fact_sales: pd.DataFrame) -> None:
-        """Carga FactSales"""
+        """Carga FactSales (incremental - solo ventas de órdenes nuevas)"""
         logger.info(f"Cargando {len(df_fact_sales)} registros de ventas...")
+        
+        if len(df_fact_sales) == 0:
+            logger.info("[OK] No hay ventas nuevas para cargar")
+            return
         
         df = df_fact_sales.copy()
         df['created_at'] = pd.to_datetime(df['created_at'])
