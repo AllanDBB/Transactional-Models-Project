@@ -1,14 +1,17 @@
 """
 Configuracion de conexiones a bases de datos MySQL
-Lee de variables de entorno (.env file)
+Lee de variables de entorno (.env file en MYSQL/)
 Permite conexiones locales y remotas (multi-equipo)
 """
 import os
 from typing import Dict
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv  # type: ignore
-    load_dotenv()
+    # Cargar .env desde el directorio MYSQL/
+    env_path = Path(__file__).resolve().parent.parent / '.env'
+    load_dotenv(dotenv_path=env_path)
 except ImportError:
     pass
 
@@ -17,9 +20,9 @@ class DatabaseConfig:
 
     # Base de datos transaccional MySQL (fuente)
     SOURCE_DB = {
-        'host': os.getenv('MYSQL_HOST', 'localhost'),
+        'host': os.getenv('MYSQL_HOST', 'mysql-transactional'),
         'port': int(os.getenv('MYSQL_PORT', '3306')),
-        'database': os.getenv('MYSQL_DATABASE', 'transactional_db'),
+        'database': os.getenv('MYSQL_DATABASE', 'sales_mysql'),
         'user': os.getenv('MYSQL_USER', 'user'),
         'password': os.getenv('MYSQL_PASSWORD', 'user123')
     }
@@ -30,8 +33,8 @@ class DatabaseConfig:
         'server': os.getenv('MSSQL_DW_SERVER', 'localhost'),
         'port': int(os.getenv('MSSQL_DW_PORT', '1434')),
         'database': 'MSSQL_DW',
-        'uid': os.getenv('MSSQL_DW_USER', 'admin'),
-        'pwd': os.getenv('MSSQL_DW_PASSWORD', 'admin123')
+        'uid': os.getenv('MSSQL_DW_USER', 'sa'),
+        'pwd': os.getenv('MSSQL_DW_PASSWORD', 'BasesDatos2!')
     }
 
     @staticmethod
@@ -57,3 +60,4 @@ class ETLConfig:
     LOG_LEVEL = 'INFO'
     LOG_FILE = 'etl_mysql_process.log'
     MAX_ERRORS = 100
+    DEFAULT_CRC_USD_RATE = 515.0  # Fallback si ExchangeRateHelper falla
