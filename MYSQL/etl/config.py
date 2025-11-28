@@ -9,7 +9,7 @@ from datetime import datetime
 
 try:
     from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parent.parent / '.env'
+    env_path = Path(__file__).resolve().parent / '.env'
     load_dotenv(dotenv_path=env_path)
 except ImportError:
     pass
@@ -19,7 +19,7 @@ class DatabaseConfig:
     """Database connection configuration for source and destination."""
 
     SOURCE_DB = {
-        'host': os.getenv('MYSQL_HOST', 'mysql-transactional'),
+        'host': os.getenv('MYSQL_HOST', 'localhost'),
         'port': int(os.getenv('MYSQL_PORT', '3306')),
         'database': os.getenv('MYSQL_DATABASE', 'sales_mysql'),
         'user': os.getenv('MYSQL_USER', 'user'),
