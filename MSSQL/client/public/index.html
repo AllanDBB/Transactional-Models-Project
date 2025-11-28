@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Transaccional MSSQL</title>
+    <title>Panel Transaccional - MSSQL & MySQL</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="page">
         <header class="hero">
             <div>
-                <p class="kicker">MSSQL Server</p>
-                <h1>Panel de Carga de Base de Datos</h1>
-                <p class="subtitle">Gestión de datos transaccionales</p>
+                <p class="kicker">Gestión de Bases de Datos</p>
+                <h1>Panel de Carga de Bases de Datos</h1>
+                <p class="subtitle">Gestión de datos transaccionales MSSQL y MySQL</p>
             </div>
         </header>
 
@@ -20,15 +20,15 @@
             <!-- Card para MSSQL -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2> Base de Datos Transaccional MSSQL</h2>
+                    <h2>🔷 Base de Datos Transaccional MSSQL</h2>
                     <p class="hint">Gestiona el schema y los datos de la base transaccional</p>
                 </div>
-                
+
                 <div class="action-grid">
-                    <!-- Inicializar Schema -->
+                    <!-- Inicializar Schema MSSQL -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon"></span>
+                            <span class="icon">📋</span>
                             <h3>Inicializar Schema</h3>
                         </div>
                         <p class="action-description">
@@ -41,10 +41,10 @@
                         <div id="status-init-schema" class="status-message"></div>
                     </div>
 
-                    <!-- Eliminar Schema -->
+                    <!-- Eliminar Schema MSSQL -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon"></span>
+                            <span class="icon">🗑️</span>
                             <h3>Eliminar Schema</h3>
                         </div>
                         <p class="action-description">
@@ -57,10 +57,10 @@
                         <div id="status-drop-schema" class="status-message"></div>
                     </div>
 
-                    <!-- Limpiar Base de Datos -->
+                    <!-- Limpiar Base de Datos MSSQL -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon"></span>
+                            <span class="icon">🧹</span>
                             <h3>Limpiar Datos</h3>
                         </div>
                         <p class="action-description">
@@ -73,10 +73,10 @@
                         <div id="status-clean-db" class="status-message"></div>
                     </div>
 
-                    <!-- Generar Datos de Prueba -->
+                    <!-- Generar Datos de Prueba MSSQL -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon"></span>
+                            <span class="icon">⚡</span>
                             <h3>Generar Datos</h3>
                         </div>
                         <p class="action-description">
@@ -89,10 +89,10 @@
                         <div id="status-generate-data" class="status-message"></div>
                     </div>
 
-                    <!-- Verificar Estado -->
+                    <!-- Verificar Estado MSSQL -->
                     <div class="action-card">
                         <div class="action-header">
-                            <span class="icon"></span>
+                            <span class="icon">📊</span>
                             <h3>Estado Actual</h3>
                         </div>
                         <div id="db-stats" class="stats-container">
@@ -122,16 +122,107 @@
                 </div>
             </section>
 
-            <!-- Card para MySQL (placeholder) -->
-            <section class="card full-width disabled">
+            <!-- Card para MySQL -->
+            <section class="card full-width">
                 <div class="card-header">
-                    <h2> Base de Datos MySQL</h2>
-                    <p class="hint">Próximamente disponible</p>
+                    <h2>🐬 Base de Datos Transaccional MySQL</h2>
+                    <p class="hint">Gestiona el schema y los datos de la base transaccional MySQL</p>
                 </div>
+
                 <div class="action-grid">
+                    <!-- Inicializar Schema MySQL -->
                     <div class="action-card">
-                        <p class="action-description">Funcionalidad en desarrollo...</p>
-                        <button class="action-button" disabled>Próximamente</button>
+                        <div class="action-header">
+                            <span class="icon">📋</span>
+                            <h3>Inicializar Schema</h3>
+                        </div>
+                        <p class="action-description">
+                            Crea el schema <code>sales_my</code> y todas las tablas necesarias (Cliente, Producto, Orden, OrdenDetalle)
+                        </p>
+                        <button id="btn-init-schema-mysql" class="action-button primary">
+                            <span class="button-text">Inicializar Schema</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-init-schema-mysql" class="status-message"></div>
+                    </div>
+
+                    <!-- Eliminar Schema MySQL -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">🗑️</span>
+                            <h3>Eliminar Schema</h3>
+                        </div>
+                        <p class="action-description">
+                            Elimina completamente el schema <code>sales_my</code> y todas sus tablas. <strong>Acción destructiva</strong>.
+                        </p>
+                        <button id="btn-drop-schema-mysql" class="action-button danger">
+                            <span class="button-text">Eliminar Schema</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-drop-schema-mysql" class="status-message"></div>
+                    </div>
+
+                    <!-- Limpiar Base de Datos MySQL -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">🧹</span>
+                            <h3>Limpiar Datos</h3>
+                        </div>
+                        <p class="action-description">
+                            Elimina todos los registros de las tablas transaccionales (Cliente, Producto, Orden, Detalle)
+                        </p>
+                        <button id="btn-clean-db-mysql" class="action-button warning">
+                            <span class="button-text">Limpiar BD</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-clean-db-mysql" class="status-message"></div>
+                    </div>
+
+                    <!-- Generar Datos de Prueba MySQL -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">⚡</span>
+                            <h3>Generar Datos</h3>
+                        </div>
+                        <p class="action-description">
+                            Genera datos de prueba: 600 clientes, 5,000 productos, 5,000 órdenes y 17,500 detalles
+                        </p>
+                        <button id="btn-generate-data-mysql" class="action-button success">
+                            <span class="button-text">Generar Datos</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-generate-data-mysql" class="status-message"></div>
+                    </div>
+
+                    <!-- Verificar Estado MySQL -->
+                    <div class="action-card">
+                        <div class="action-header">
+                            <span class="icon">📊</span>
+                            <h3>Estado Actual</h3>
+                        </div>
+                        <div id="db-stats-mysql" class="stats-container">
+                            <div class="stat-item">
+                                <span class="stat-label">Clientes:</span>
+                                <span id="stat-clientes-mysql" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Productos:</span>
+                                <span id="stat-productos-mysql" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Órdenes:</span>
+                                <span id="stat-ordenes-mysql" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Detalles:</span>
+                                <span id="stat-detalles-mysql" class="stat-value">-</span>
+                            </div>
+                        </div>
+                        <button id="btn-refresh-stats-mysql" class="action-button secondary">
+                            <span class="button-text">Actualizar Estado</span>
+                            <span class="spinner" style="display: none;">⏳</span>
+                        </button>
+                        <div id="status-refresh-stats-mysql" class="status-message"></div>
                     </div>
                 </div>
             </section>
