@@ -53,29 +53,21 @@ def verify_database_connections(logger):
     logger.info("VERIFICANDO CONEXIONES A BASES DE DATOS")
     logger.info("=" * 80)
 
-    # ========== VERIFICAR MySQL ==========
     logger.info("\n[1/2] Verificando conexion a MySQL (Fuente)...")
     try:
         mysql_params = DatabaseConfig.get_source_connection_params()
         logger.info(f"  Host: {mysql_params['host']}:{mysql_params['port']}")
         logger.info(f"  Database: {mysql_params['database']}")
 
-        conn = mysql.connector.connect(**mysql_params)
-        cursor = conn.cursor()
+        with mysql.connector.connect(**mysql_params) as conn:
+            with conn.cursor() as cur:
+                tables = [row[0] for row in cur.execute("SHOW TABLES", multi=False) or cur.fetchall()]
 
-        # Listar tablas
-        cursor.execute("SHOW TABLES")
-        tables = [row[0] for row in cursor.fetchall()]
-
-        logger.info(f"  [OK] Conexion exitosa a MySQL")
-        logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
-        for table in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cursor.fetchone()[0]
-            logger.info(f"      - {table}: {count} registros")
-
-        cursor.close()
-        conn.close()
+                logger.info(f"  [OK] Conexion exitosa a MySQL")
+                logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
+                for table in tables:
+                    cur.execute(f"SELECT COUNT(*) FROM {table}")
+                    logger.info(f"      - {table}: {cur.fetchone()[0]} registros")
 
     except mysql.connector.Error as e:
         logger.error(f"  [ERROR] No se pudo conectar a MySQL: {str(e)}")
@@ -84,7 +76,6 @@ def verify_database_connections(logger):
         logger.error(f"  [ERROR] Error inesperado con MySQL: {str(e)}")
         return False
 
-    # ========== VERIFICAR SQL Server DW ==========
     logger.info("\n[2/2] Verificando conexion a SQL Server DW (Destino)...")
     try:
         dw_conn_string = DatabaseConfig.get_dw_connection_string()
@@ -92,32 +83,23 @@ def verify_database_connections(logger):
         logger.info(f"  Server: {dw_config['server']}:{dw_config['port']}")
         logger.info(f"  Database: {dw_config['database']}")
 
-        conn = pyodbc.connect(dw_conn_string)
-        cursor = conn.cursor()
+        with pyodbc.connect(dw_conn_string) as conn:
+            tables = [row[0] for row in conn.execute("""
+                SELECT TABLE_NAME
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE'
+                AND TABLE_CATALOG = ?
+                ORDER BY TABLE_NAME
+            """, dw_config['database']).fetchall()]
 
-        # Listar tablas
-        cursor.execute("""
-            SELECT TABLE_NAME
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_TYPE = 'BASE TABLE'
-            AND TABLE_CATALOG = ?
-            ORDER BY TABLE_NAME
-        """, dw_config['database'])
-
-        tables = [row[0] for row in cursor.fetchall()]
-
-        logger.info(f"  [OK] Conexion exitosa a SQL Server DW")
-        logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
-        for table in tables:
-            try:
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cursor.fetchone()[0]
-                logger.info(f"      - {table}: {count} registros")
-            except:
-                logger.info(f"      - {table}: (no se pudo contar)")
-
-        cursor.close()
-        conn.close()
+            logger.info(f"  [OK] Conexion exitosa a SQL Server DW")
+            logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
+            for table in tables:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    logger.info(f"      - {table}: {count} registros")
+                except:
+                    logger.info(f"      - {table}: (no se pudo contar)")
 
     except pyodbc.Error as e:
         logger.error(f"  [ERROR] No se pudo conectar a SQL Server DW: {str(e)}")
@@ -133,14 +115,23 @@ def verify_database_connections(logger):
 
 
 def run_etl():
-    """Ejecuta el proceso ETL completo con 5 reglas de integracion"""
+    """
+    Execute complete ETL process: MySQL -> MSSQL Data Warehouse
+
+    Implements 5 Integration Rules:
+    1. Product homologation (alternative codes mapping table)
+    2. Currency normalization (CRC -> USD using exchange rates)
+    3. Gender standardization (M/F/X -> Masculino/Femenino/No especificado)
+    4. Date conversion (VARCHAR -> DATE/DATETIME)
+    5. Amount transformation (string with commas/dots -> DECIMAL)
+    """
     logger = setup_logging()
     logger.info("=" * 80)
     logger.info("INICIANDO PROCESO ETL: MySQL -> DWH (5 Reglas de Integracion)")
     logger.info("=" * 80)
 
     try:
-        # ========== VERIFICAR CONEXIONES ==========
+        # ========== VERIFY CONNECTIONS ==========
         if not verify_database_connections(logger):
             logger.error("[ERROR] No se pudo establecer conexion con las bases de datos")
             logger.error("[ERROR] ETL CANCELADO - Verifique la conectividad y configuracion")
@@ -150,6 +141,7 @@ def run_etl():
         logger.info("\n[FASE 1] EXTRAYENDO DATOS DE MySQL...")
         extractor = DataExtractor(DatabaseConfig.get_source_connection_params())
 
+        # Extract all source tables
         clientes, productos, ordenes, orden_detalle = extractor.extract_all()
 
         logger.info(f"[OK] Clientes extraidos: {len(clientes)}")
@@ -160,10 +152,31 @@ def run_etl():
         # ========== TRANSFORM ==========
         logger.info("\n[FASE 2] TRANSFORMANDO DATOS (5 REGLAS)...")
 
-        # Crear transformer sin ExchangeRateHelper por ahora
-        # (se usará tasa por defecto en conversiones CRC->USD)
-        transformer = DataTransformer(exchange_rate_helper=None)
-        logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
+        # Try to use real exchange rates from DWH (Rule 2)
+        try:
+            exchange_helper = ExchangeRateHelper(DatabaseConfig.get_dw_connection_string())
+            if exchange_helper.conectar():
+                # Check if exchange rates are available
+                count = exchange_helper.conn.execute(
+                    "SELECT COUNT(*) FROM DimExchangeRate WHERE fromCurrency = 'CRC' AND toCurrency = 'USD'"
+                ).fetchone()[0]
+
+                if count > 0:
+                    logger.info(f"[OK] ExchangeRateHelper habilitado - {count} tasas CRC->USD disponibles")
+                    transformer = DataTransformer(exchange_rate_helper=exchange_helper)
+                else:
+                    logger.warning("[WARN] No hay tasas de cambio en DimExchangeRate")
+                    logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
+                    exchange_helper.cerrar()
+                    transformer = DataTransformer(exchange_rate_helper=None)
+            else:
+                logger.warning("[WARN] No se pudo conectar al ExchangeRateHelper")
+                logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
+                transformer = DataTransformer(exchange_rate_helper=None)
+        except Exception as e:
+            logger.warning(f"[WARN] Error inicializando ExchangeRateHelper: {e}")
+            logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
+            transformer = DataTransformer(exchange_rate_helper=None)
 
         # REGLA 3: Estandarizacion de genero (M/F/X -> valores unicos)
         # REGLA 4: Conversion de fechas (VARCHAR -> DATE)
@@ -256,6 +269,7 @@ def run_etl():
 
         # Construir y cargar FactSales
         logger.info("\n[Construyendo FactSales]")
+        fact_sales_count = 0
         try:
             fact_sales = transformer.build_fact_sales(
                 detalle_trans,
@@ -266,10 +280,9 @@ def run_etl():
                 order_map
             )
             # Pasar los mapeos de IDs a load_fact_sales
-            loader.load_fact_sales(fact_sales, product_map, time_map, order_map, channel_map, customer_map)
+            fact_sales_count = loader.load_fact_sales(fact_sales, product_map, time_map, order_map, channel_map, customer_map)
         except Exception as e:
             logger.warning(f"Error cargando FactSales: {e}")
-            fact_sales = []
 
         # Cargar tablas de staging (5 reglas)
         logger.info("\n[Cargando Tablas de Staging - 5 Reglas]")
@@ -303,7 +316,7 @@ def run_etl():
         logger.info(f"  [OK] Clientes: {len(clientes_trans)}")
         logger.info(f"  [OK] Productos: {len(productos_trans)}")
         logger.info(f"  [OK] Ordenes: {len(ordenes_trans)}")
-        logger.info(f"  [OK] FactSales: {len(fact_sales) if isinstance(fact_sales, list) else 'N/A'}")
+        logger.info(f"  [OK] FactSales: {fact_sales_count}")
         logger.info(f"  [OK] Mapeos (REGLA 1): {len(product_mapping)}")
         logger.info("\n[REGLAS APLICADAS]")
         logger.info("  [OK] REGLA 1: Homologacion de productos (codigo_alt - tabla puente)")

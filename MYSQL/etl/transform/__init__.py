@@ -1,45 +1,32 @@
 """
-Modulo Transform: Aplica las 5 reglas de transformación a los datos de MySQL
+Data transformation module applying 5 integration rules:
 
-Reglas de Integración (ETL):
-1. Homologación de productos: codigo_alt -> SKU oficial (tabla puente)
-2. Normalización de moneda: convertir CRC a USD con tabla de tipo de cambio
-3. Estandarización de género: M/F/X -> valores unicos (Masculino/Femenino/No especificado)
-4. Conversión de fechas: VARCHAR a DATE/DATETIME
-5. Transformación de totales: montos string -> decimal (limpiar comas/puntos)
-
-Heterogeneidades de MySQL:
-- codigo_alt (no es SKU oficial) -> REGLA 1
-- Fechas en VARCHAR -> REGLA 4
-- Montos en VARCHAR con formato variado -> REGLA 5
-- Género M/F/X -> REGLA 3
-- Moneda mezclada USD/CRC -> REGLA 2
-- SIN campo descuento en OrdenDetalle
+1. Product homologation: codigo_alt -> official SKU (mapping table)
+2. Currency normalization: CRC to USD using exchange rates
+3. Gender standardization: M/F/X -> standardized values
+4. Date conversion: VARCHAR to DATE/DATETIME
+5. Amount transformation: string to decimal (clean formatting)
 """
 import pandas as pd
-import numpy as np
 from datetime import datetime, date
 import logging
-from typing import Dict, List, Tuple, Optional
-import re
+from typing import Dict, Tuple, Optional
 import sys
 from pathlib import Path
 
-# Importar ExchangeRateHelper desde shared
 root_path = Path(__file__).resolve().parents[2]
 shared_path = root_path / "shared"
 sys.path.insert(0, str(shared_path))
 
-from ExchangeRateHelper import ExchangeRateHelper  # type: ignore
+from ExchangeRateHelper import ExchangeRateHelper # type: ignore
 from config import ETLConfig
 
 logger = logging.getLogger(__name__)
 
 
 class DataTransformer:
-    """Transforma y normaliza datos de MySQL según las 5 reglas de integración ETL"""
+    """Transforms and normalizes MySQL data according to 5 ETL integration rules."""
 
-    # REGLA 3: Mapeo de géneros (MySQL usa M/F/X)
     GENDER_MAPPING = {
         'M': 'Masculino',
         'F': 'Femenino',
@@ -55,73 +42,34 @@ class DataTransformer:
     SOURCE_SYSTEM = 'MYSQL'
 
     def __init__(self, exchange_rate_helper: Optional[ExchangeRateHelper] = None):
-        """
-        Args:
-            exchange_rate_helper: Instancia de ExchangeRateHelper para consultar tasas del DWH
-                                  Si es None, usa tasa por defecto
-        """
         self.exchange_rate_helper = exchange_rate_helper
 
     def _clean_numeric_string(self, value: str) -> float:
         """
-        REGLA 5: Limpia string numérico con comas/puntos
-        Maneja formatos:
-        - '1,200.50' (USA: coma miles, punto decimal)
-        - '1.200,50' (Europa: punto miles, coma decimal)
-        - '1.750.00' (punto miles y punto decimal)
-        - '1.750.000,00' (múltiples separadores de miles)
-        - '1200,50' (coma decimal)
-        - '1200.50' (punto decimal)
+        Rule 5: Clean numeric strings with various formats (European/American).
+        Handles: 1.750,00 (EU), 1,200.50 (US), 1200.50, etc.
         """
         if pd.isna(value) or value == '':
             return 0.0
 
         value = str(value).strip()
-
-        # Contar separadores
         comma_count = value.count(',')
         dot_count = value.count('.')
 
-        # CASO 1: Múltiples puntos (ej: 1.750.00 o 1.750.000.00)
-        # Los puntos son separadores de miles EXCEPTO el último que puede ser decimal
+        # European format with multiple dots as thousands separator (1.750.000,00)
         if dot_count > 1:
             parts = value.split('.')
-            # Si la última parte tiene 2 dígitos, es decimal
-            if len(parts[-1]) == 2:
-                value = ''.join(parts[:-1]) + '.' + parts[-1]
-            else:
-                # Todos los puntos son separadores de miles
-                value = ''.join(parts)
-
-        # CASO 2: Múltiples comas (ej: 1,750,000)
-        # Las comas son separadores de miles
+            value = ''.join(parts[:-1]) + '.' + parts[-1] if len(parts[-1]) == 2 else ''.join(parts)
+        # American format with multiple commas as thousands separator (1,200,300.00)
         elif comma_count > 1:
             value = value.replace(',', '')
-
-        # CASO 3: Formato mixto coma y punto (ej: 1,200.50 o 1.200,50)
+        # Mixed: determine which is decimal separator based on position
         elif comma_count > 0 and dot_count > 0:
-            last_comma_pos = value.rfind(',')
-            last_dot_pos = value.rfind('.')
-            # El que está más a la derecha es el decimal, el otro es miles
-            if last_dot_pos > last_comma_pos:
-                # Formato USA: 1,200.50
-                value = value.replace(',', '')
-            else:
-                # Formato Europa: 1.200,50
-                value = value.replace('.', '').replace(',', '.')
-
-        # CASO 4: Solo una coma (ej: 1200,50 o 1,200)
+            value = value.replace(',', '') if value.rfind('.') > value.rfind(',') else value.replace('.', '').replace(',', '.')
+        # Single comma: check if decimal (,50) or thousands (1,200)
         elif comma_count == 1:
             parts = value.split(',')
-            # Si la parte después de la coma tiene 2 dígitos, es decimal
-            if len(parts[-1]) == 2:
-                value = value.replace(',', '.')
-            # Si tiene 3 dígitos, es separador de miles
-            else:
-                value = value.replace(',', '')
-
-        # CASO 5: Solo un punto (ya es formato correcto para float)
-        # No requiere transformación
+            value = value.replace(',', '.') if len(parts[-1]) == 2 else value.replace(',', '')
 
         try:
             return float(value)
@@ -130,23 +78,17 @@ class DataTransformer:
             return 0.0
 
     def _parse_fecha(self, fecha_str: str) -> Optional[date]:
-        """
-        REGLA 4: Convierte VARCHAR a DATE
-        Maneja formatos: 'YYYY-MM-DD' y 'YYYY-MM-DD HH:MM:SS'
-        """
+        """Rule 4: Convert VARCHAR to DATE."""
         if pd.isna(fecha_str) or fecha_str == '':
             return None
 
         fecha_str = str(fecha_str).strip()
-
-        # Intenta primero con formato completo
         for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y/%m/%d']:
             try:
                 return pd.to_datetime(fecha_str, format=fmt).date()
             except:
                 continue
 
-        # Fallback a conversión automática
         try:
             return pd.to_datetime(fecha_str).date()
         except:
@@ -154,213 +96,147 @@ class DataTransformer:
             return None
 
     def transform_clientes(self, df_clientes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        REGLA 3: Estandarización de género (M/F/X -> Masculino/Femenino/No especificado)
-        REGLA 4: Conversión de fechas (VARCHAR 'YYYY-MM-DD' -> DATE)
-
-        Args:
-            df_clientes: DataFrame extraido de Cliente table
-
-        Returns:
-            Tuple: (df_transformado, tracking_dict)
-        """
+        """Rule 3: Gender standardization. Rule 4: Date conversion."""
         logger.info(f"Transformando {len(df_clientes)} clientes...")
 
         df = df_clientes.copy()
-
-        # Agregar trazabilidad (Consideración 5)
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
 
-        # REGLA 3: Estandarizar género M/F/X -> Masculino/Femenino/No especificado
-        df['genero'] = df['genero'].fillna('X')
-        df['genero'] = df['genero'].map(self.GENDER_MAPPING)
-
-        # Normalizar email
-        df['correo'] = df['correo'].fillna('')
-        df['correo'] = df['correo'].str.strip().str.lower()
-
-        # REGLA 4: Convertir fecha VARCHAR 'YYYY-MM-DD' a DATE
+        df['genero'] = df['genero'].fillna('X').map(self.GENDER_MAPPING)
+        df['correo'] = df['correo'].fillna('').str.strip().str.lower()
         df['created_at'] = df['created_at'].apply(self._parse_fecha)
-
-        # Normalizar país
         df['pais'] = df['pais'].str.strip()
 
         logger.info(f"[OK] {len(df)} clientes transformados")
 
-        track = {
+        return df, {
             'total': len(df),
             'genero_standardized': len(df[df['genero'].notna()]),
             'fecha_parsed': len(df[df['created_at'].notna()])
         }
 
-        return df, track
-
     def transform_productos(self, df_productos: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        REGLA 1: Homologación de productos (codigo_alt -> SKU oficial)
-
-        Args:
-            df_productos: DataFrame extraido de Producto table
-
-        Returns:
-            Tuple: (df_transformado, tracking_dict)
-        """
+        """Rule 1: Product homologation (codigo_alt -> official SKU)."""
         logger.info(f"Transformando {len(df_productos)} productos...")
 
         df = df_productos.copy()
-
-        # Agregar trazabilidad
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
-
-        # REGLA 1: codigo_alt se mantiene para mapeo posterior
-        # Se generará SKU oficial en tabla puente
         df['sku_oficial'] = 'SKU-' + df['id'].astype(str).str.zfill(5)
-
-        # Normalizar categoria
         df['categoria'] = df['categoria'].str.strip()
 
         logger.info(f"[OK] {len(df)} productos transformados")
 
-        track = {
+        return df, {
             'total': len(df),
             'sku_generated': len(df[df['sku_oficial'].notna()])
         }
 
-        return df, track
-
     def transform_ordenes(self, df_ordenes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        REGLA 2: Normalización de moneda (CRC -> USD)
-        REGLA 4: Conversion de fechas (VARCHAR -> DATETIME)
-        REGLA 5: Transformación de totales (string con comas/puntos -> DECIMAL)
-
-        Args:
-            df_ordenes: DataFrame extraido de Orden table
-
-        Returns:
-            Tuple: (df_transformado, tracking_dict)
-        """
-        logger.info(f"Transformando {len(df_ordenes)} órdenes...")
+        """Rule 2: Currency normalization. Rule 4: Date conversion. Rule 5: Amount transformation."""
+        logger.info(f"Transformando {len(df_ordenes)} ordenes...")
 
         df = df_ordenes.copy()
-
-        # Agregar trazabilidad
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
 
-        # REGLA 4: Convertir fecha VARCHAR a DATETIME
         df['fecha'] = df['fecha'].apply(
             lambda x: pd.to_datetime(self._parse_fecha(x)) if self._parse_fecha(x) else None
         )
-
-        # REGLA 5: Limpiar montos (string -> decimal)
         df['total_limpio'] = df['total'].apply(self._clean_numeric_string)
 
-        # REGLA 2: Normalizar moneda (CRC -> USD)
-        # Por ahora usar tasa por defecto. ExchangeRateHelper se usará en load si está disponible
         crc_rows = df['moneda'] == 'CRC'
         if crc_rows.any():
-            logger.warning(f"[REGLA 2] {crc_rows.sum()} órdenes en CRC - usando tasa por defecto {ETLConfig.DEFAULT_CRC_USD_RATE}")
-            df.loc[crc_rows, 'total_usd'] = df.loc[crc_rows, 'total_limpio'] / ETLConfig.DEFAULT_CRC_USD_RATE
-            df.loc[~crc_rows, 'total_usd'] = df.loc[~crc_rows, 'total_limpio']
+            if self.exchange_rate_helper:
+                logger.info(f"[REGLA 2] Convirtiendo {crc_rows.sum()} ordenes CRC->USD usando tasas del DWH")
+                df['total_usd'] = df.apply(
+                    lambda row: self.exchange_rate_helper.convertir_monto(
+                        row['total_limpio'], 'CRC', 'USD',
+                        row['fecha'].date() if pd.notna(row['fecha']) else None
+                    ) if row['moneda'] == 'CRC' else row['total_limpio'],
+                    axis=1
+                )
+
+                failed_conversions = df[crc_rows & df['total_usd'].isna()]
+                if len(failed_conversions) > 0:
+                    logger.warning(f"[REGLA 2] {len(failed_conversions)} ordenes sin tasa - usando default")
+                    df.loc[crc_rows & df['total_usd'].isna(), 'total_usd'] = \
+                        df.loc[crc_rows & df['total_usd'].isna(), 'total_limpio'] / ETLConfig.DEFAULT_CRC_USD_RATE
+            else:
+                logger.warning(f"[REGLA 2] {crc_rows.sum()} ordenes en CRC - usando tasa por defecto")
+                df.loc[crc_rows, 'total_usd'] = df.loc[crc_rows, 'total_limpio'] / ETLConfig.DEFAULT_CRC_USD_RATE
+                df.loc[~crc_rows, 'total_usd'] = df.loc[~crc_rows, 'total_limpio']
         else:
             df['total_usd'] = df['total_limpio']
 
-        # Normalizar canal
         df['canal'] = df['canal'].str.strip().str.upper()
+        logger.info(f"[OK] {len(df)} ordenes transformadas")
 
-        logger.info(f"[OK] {len(df)} órdenes transformadas")
-
-        track = {
+        return df, {
             'total': len(df),
             'fecha_parsed': len(df[df['fecha'].notna()]),
             'total_cleaned': len(df[df['total_limpio'] > 0]),
             'crc_converted': crc_rows.sum()
         }
 
-        return df, track
-
     def transform_orden_detalle(self, df_detalle: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        REGLA 5: Transformación de totales (precio_unit string -> decimal)
-
-        Args:
-            df_detalle: DataFrame extraido de OrdenDetalle table
-
-        Returns:
-            Tuple: (df_transformado, tracking_dict)
-        """
-        logger.info(f"Transformando {len(df_detalle)} detalles de órdenes...")
+        """Rule 5: Amount transformation (precio_unit string to decimal)."""
+        logger.info(f"Transformando {len(df_detalle)} detalles de ordenes...")
 
         df = df_detalle.copy()
-
-        # Agregar trazabilidad
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
-
-        # REGLA 5: Limpiar precio_unit (string -> decimal)
         df['precio_unit_limpio'] = df['precio_unit'].apply(self._clean_numeric_string)
 
         logger.info(f"[OK] {len(df)} detalles transformados")
 
-        track = {
+        return df, {
             'total': len(df),
             'precio_cleaned': len(df[df['precio_unit_limpio'] > 0])
         }
 
-        return df, track
-
     def extract_categorias(self, df_productos: pd.DataFrame) -> pd.DataFrame:
-        """Extrae dimensión de categorías"""
         categorias = df_productos[['categoria']].drop_duplicates().reset_index(drop=True)
         categorias['categoria_id'] = range(1, len(categorias) + 1)
         return categorias
 
     def extract_canales(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
-        """Extrae dimensión de canales"""
         canales = df_ordenes[['canal']].drop_duplicates().reset_index(drop=True)
         canales['canal_id'] = range(1, len(canales) + 1)
         canales.columns = ['nombre', 'canal_id']
         return canales
 
     def generate_dimtime(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
-        """Genera dimensión de tiempo basada en fechas de órdenes"""
         if df_ordenes['fecha'].isna().all():
-            logger.warning("No hay fechas válidas en órdenes")
+            logger.warning("No hay fechas validas en ordenes")
             return pd.DataFrame()
 
-        # Obtener rango de fechas
         fechas = pd.to_datetime(df_ordenes['fecha'].dropna()).dt.date.unique()
         fechas = sorted(fechas)
 
         if len(fechas) == 0:
             return pd.DataFrame()
 
-        # Generar rango de fechas
-        fecha_min = min(fechas)
-        fecha_max = max(fechas)
+        fecha_min, fecha_max = min(fechas), max(fechas)
         date_range = pd.date_range(start=fecha_min, end=fecha_max, freq='D')
 
-        dim_time = []
-        for idx, fecha in enumerate(date_range, start=1):
-            dim_time.append({
+        dim_time = [
+            {
                 'time_id': idx,
                 'fecha': fecha.date(),
                 'anio': fecha.year,
                 'mes': fecha.month,
                 'dia': fecha.day,
                 'trimestre': (fecha.month - 1) // 3 + 1
-            })
+            }
+            for idx, fecha in enumerate(date_range, start=1)
+        ]
 
         return pd.DataFrame(dim_time)
 
     def build_product_mapping(self, df_productos: pd.DataFrame) -> pd.DataFrame:
-        """
-        REGLA 1: Construye tabla puente de mapeo de productos
-        mapea: source_system, source_code (codigo_alt), sku_oficial
-        """
+        """Rule 1: Build product mapping table (codigo_alt -> official SKU)."""
         mapping = pd.DataFrame({
             'source_system': df_productos['source_system'],
             'source_code': df_productos['codigo_alt'],
@@ -381,43 +257,35 @@ class DataTransformer:
         order_tracking: Dict
     ) -> pd.DataFrame:
         """
-        Construye tabla de hechos FactSales
-        Realiza joins entre tablas transformadas
-        Incluye source_key fields para mapeo de IDs
+        Build FactSales by joining order details with dimensions.
+        Uses inner joins to ensure referential integrity.
+        Preserves source_keys for ID mapping to DWH.
         """
         logger.info("Construyendo FactSales...")
 
-        # Join con ordenes - incluir source_key de orden
+        # Join details with orders (inner join ensures orphaned details are excluded)
         fact = df_detalle.merge(
             df_ordenes[['id', 'cliente_id', 'fecha', 'canal', 'total_usd', 'source_key']],
-            left_on='orden_id',
-            right_on='id',
-            how='left',
-            suffixes=('', '_orden')
+            left_on='orden_id', right_on='id', how='inner', suffixes=('_detalle', '_orden')
         )
-        fact.rename(columns={'source_key': 'orden_source_key'}, inplace=True)
+        # Rename to distinguish detail vs order source keys
+        fact.rename(columns={'source_key_orden': 'orden_source_key', 'source_key_detalle': 'detalle_source_key'}, inplace=True)
 
-        # Join con productos - incluir source_key de producto
+        # Join with products
         fact = fact.merge(
             df_productos[['id', 'sku_oficial', 'categoria', 'source_key']],
-            left_on='producto_id',
-            right_on='id',
-            how='left',
-            suffixes=('', '_producto')
+            left_on='producto_id', right_on='id', how='inner', suffixes=('', '_producto')
         )
         fact.rename(columns={'source_key': 'producto_source_key'}, inplace=True)
 
-        # Join con clientes - incluir source_key de cliente
+        # Join with customers
         fact = fact.merge(
             df_clientes[['id', 'pais', 'source_key']],
-            left_on='cliente_id',
-            right_on='id',
-            how='left',
-            suffixes=('', '_cliente')
+            left_on='cliente_id', right_on='id', how='inner', suffixes=('', '_cliente')
         )
         fact.rename(columns={'source_key': 'cliente_source_key'}, inplace=True)
 
-        # Calcular monto de línea
+        # Calculate line total (quantity * unit price)
         fact['monto_linea'] = fact['precio_unit_limpio'] * fact['cantidad']
 
         logger.info(f"[OK] {len(fact)} registros en FactSales")
