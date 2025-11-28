@@ -104,7 +104,129 @@ BEGIN
         CREATE INDEX IX_Orden_Fecha ON sales_ms.Orden(Fecha);
         CREATE INDEX IX_Detalle_Prod ON sales_ms.OrdenDetalle(ProductoId);
         PRINT '[OK] Índices creados';
-        
+
+        -- Recrear stored procedures del schema
+        -- sp_limpiar_bd
+        IF OBJECT_ID('sales_ms.sp_limpiar_bd', 'P') IS NOT NULL
+            EXEC('DROP PROCEDURE sales_ms.sp_limpiar_bd');
+
+        EXEC('
+        CREATE PROCEDURE sales_ms.sp_limpiar_bd
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            BEGIN TRY
+                BEGIN TRANSACTION;
+                DELETE FROM sales_ms.OrdenDetalle;
+                DELETE FROM sales_ms.Orden;
+                DELETE FROM sales_ms.Producto;
+                DELETE FROM sales_ms.Cliente;
+                DBCC CHECKIDENT (''sales_ms.Cliente'', RESEED, 0);
+                DBCC CHECKIDENT (''sales_ms.Producto'', RESEED, 0);
+                DBCC CHECKIDENT (''sales_ms.Orden'', RESEED, 0);
+                DBCC CHECKIDENT (''sales_ms.OrdenDetalle'', RESEED, 0);
+                COMMIT;
+                PRINT ''[OK] Base de datos limpiada exitosamente'';
+            END TRY
+            BEGIN CATCH
+                ROLLBACK;
+                THROW;
+            END CATCH
+        END
+        ');
+        PRINT '[OK] Stored procedure sales_ms.sp_limpiar_bd recreado';
+
+        -- sp_generar_datos
+        IF OBJECT_ID('sales_ms.sp_generar_datos', 'P') IS NOT NULL
+            EXEC('DROP PROCEDURE sales_ms.sp_generar_datos');
+
+        EXEC('
+        CREATE PROCEDURE sales_ms.sp_generar_datos
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            DECLARE @i INT;
+            BEGIN TRY
+                BEGIN TRANSACTION;
+
+                -- Generar Clientes (600)
+                SET @i = 1;
+                WHILE @i <= 600
+                BEGIN
+                    INSERT INTO sales_ms.Cliente (Nombre, Email, Genero, Pais, FechaRegistro)
+                    VALUES (
+                        ''Cliente'' + CAST(@i AS NVARCHAR),
+                        ''cliente'' + CAST(@i AS NVARCHAR) + ''@mail.com'',
+                        CASE WHEN @i % 2 = 0 THEN ''Masculino'' ELSE ''Femenino'' END,
+                        CASE WHEN @i % 3 = 0 THEN ''Costa Rica'' WHEN @i % 3 = 1 THEN ''USA'' ELSE ''Mexico'' END,
+                        DATEADD(DAY, -(@i % 365), GETDATE())
+                    );
+                    SET @i = @i + 1;
+                END;
+
+                -- Generar Productos (5000)
+                SET @i = 1;
+                WHILE @i <= 5000
+                BEGIN
+                    INSERT INTO sales_ms.Producto (SKU, Nombre, Categoria)
+                    VALUES (
+                        ''SKU'' + RIGHT(''00000'' + CAST(@i AS NVARCHAR), 5),
+                        ''Producto '' + CAST(@i AS NVARCHAR),
+                        CASE WHEN @i % 4 = 0 THEN ''Electronica'' WHEN @i % 4 = 1 THEN ''Ropa'' WHEN @i % 4 = 2 THEN ''Hogar'' ELSE ''Deportes'' END
+                    );
+                    SET @i = @i + 1;
+                END;
+
+                -- Generar Ordenes (5000)
+                SET @i = 1;
+                WHILE @i <= 5000
+                BEGIN
+                    INSERT INTO sales_ms.Orden (ClienteId, Fecha, Canal, Moneda, Total)
+                    VALUES (
+                        ((@i % 600) + 1),
+                        DATEADD(MINUTE, -@i, GETDATE()),
+                        CASE WHEN @i % 3 = 0 THEN ''WEB'' WHEN @i % 3 = 1 THEN ''TIENDA'' ELSE ''APP'' END,
+                        ''USD'',
+                        ROUND(RAND(CHECKSUM(NEWID())) * 1000 + 100, 2)
+                    );
+                    SET @i = @i + 1;
+                END;
+
+                -- Generar OrdenDetalles (17500 - promedio 3.5 por orden)
+                SET @i = 1;
+                DECLARE @ordenId INT = 1;
+                DECLARE @detallesPorOrden INT;
+                WHILE @ordenId <= 5000
+                BEGIN
+                    SET @detallesPorOrden = 3 + (@ordenId % 2);
+                    DECLARE @j INT = 1;
+                    WHILE @j <= @detallesPorOrden
+                    BEGIN
+                        INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnit, DescuentoPct)
+                        VALUES (
+                            @ordenId,
+                            ((@i % 5000) + 1),
+                            ((@i % 5) + 1),
+                            ROUND(RAND(CHECKSUM(NEWID())) * 200 + 10, 2),
+                            CASE WHEN @i % 5 = 0 THEN 10.00 ELSE NULL END
+                        );
+                        SET @i = @i + 1;
+                        SET @j = @j + 1;
+                    END;
+                    SET @ordenId = @ordenId + 1;
+                END;
+
+                COMMIT;
+                PRINT ''[OK] Datos generados: 600 clientes, 5000 productos, 5000 ordenes, 17500 detalles'';
+            END TRY
+            BEGIN CATCH
+                ROLLBACK;
+                THROW;
+            END CATCH
+        END
+        ');
+        PRINT '[OK] Stored procedure sales_ms.sp_generar_datos recreado';
+
         PRINT '';
         PRINT '========================================';
         PRINT 'SCHEMA INICIALIZADO EXITOSAMENTE';
@@ -114,6 +236,9 @@ BEGIN
         PRINT '  - sales_ms.Producto';
         PRINT '  - sales_ms.Orden';
         PRINT '  - sales_ms.OrdenDetalle';
+        PRINT 'Stored Procedures recreados:';
+        PRINT '  - sales_ms.sp_limpiar_bd';
+        PRINT '  - sales_ms.sp_generar_datos';
         PRINT '========================================';
         
     END TRY
