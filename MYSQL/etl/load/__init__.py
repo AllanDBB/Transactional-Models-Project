@@ -57,210 +57,285 @@ class DataLoader:
             logger.error(f"Error al limpiar tablas: {str(e)}")
             raise
 
-    def load_dim_category(self, df_categorias: pd.DataFrame) -> None:
-        """Carga dimensión DimCategory"""
+    def load_dim_category(self, df_categorias: pd.DataFrame) -> Dict:
+        """Carga dimensión DimCategory y retorna mapeo nombre -> ID"""
         logger.info(f"Cargando {len(df_categorias)} categorías...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            category_map = {}
 
             for idx, row in df_categorias.iterrows():
-                sql = f"""
-                    INSERT INTO DimCategory (nombre)
+                # DWH schema: DimCategory(id, name)
+                sql = """
+                    INSERT INTO DimCategory (name)
                     VALUES (?)
                 """
                 cursor.execute(sql, str(row['categoria']))
+
+                # Obtener ID generado
+                cursor.execute("SELECT @@IDENTITY")
+                cat_id = cursor.fetchone()[0]
+                category_map[str(row['categoria'])] = int(cat_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_categorias)} categorías cargadas")
+            return category_map
         except Exception as e:
             logger.error(f"Error al cargar categorías: {str(e)}")
             raise
 
-    def load_dim_channel(self, df_canales: pd.DataFrame) -> None:
-        """Carga dimensión DimChannel"""
+    def load_dim_channel(self, df_canales: pd.DataFrame) -> Dict:
+        """Carga dimensión DimChannel y retorna mapeo nombre -> ID"""
         logger.info(f"Cargando {len(df_canales)} canales...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            channel_map = {}
+
+            # Mapeo de canales a channelType
+            channel_type_map = {
+                'WEBSITE': 'Website',
+                'TIENDA': 'Store',
+                'APP': 'App',
+                'SOCIO': 'Partner'
+            }
 
             for idx, row in df_canales.iterrows():
-                sql = f"""
-                    INSERT INTO DimChannel (nombre)
-                    VALUES (?)
+                canal_nombre = str(row['nombre']).upper()
+                channel_type = channel_type_map.get(canal_nombre, 'Other')
+
+                # DWH schema: DimChannel(id, name, channelType)
+                sql = """
+                    INSERT INTO DimChannel (name, channelType)
+                    VALUES (?, ?)
                 """
-                cursor.execute(sql, str(row['nombre']))
+                cursor.execute(sql, str(row['nombre']), channel_type)
+
+                # Obtener ID generado
+                cursor.execute("SELECT @@IDENTITY")
+                channel_id = cursor.fetchone()[0]
+                channel_map[str(row['nombre'])] = int(channel_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_canales)} canales cargados")
+            return channel_map
         except Exception as e:
             logger.error(f"Error al cargar canales: {str(e)}")
             raise
 
-    def load_dim_customer(self, df_clientes: pd.DataFrame) -> None:
-        """Carga dimensión DimCustomer"""
+    def load_dim_customer(self, df_clientes: pd.DataFrame) -> Dict:
+        """Carga dimensión DimCustomer y retorna mapeo source_key -> ID"""
         logger.info(f"Cargando {len(df_clientes)} clientes...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            customer_map = {}
+
+            # Mapeo inverso de género (transformado -> DWH)
+            gender_reverse_map = {
+                'Masculino': 'M',
+                'Femenino': 'F',
+                'No especificado': 'O'
+            }
 
             for idx, row in df_clientes.iterrows():
+                genero_transformado = str(row.get('genero', 'No especificado'))
+                gender_code = gender_reverse_map.get(genero_transformado, 'O')
+
+                # DWH schema: DimCustomer(id, name, email, gender, country, created_at)
                 sql = """
-                    INSERT INTO DimCustomer (nombre, email, genero, pais, fecha_registro, source_system, source_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO DimCustomer (name, email, gender, country, created_at)
+                    VALUES (?, ?, ?, ?, ?)
                 """
                 cursor.execute(sql,
                     str(row.get('nombre', '')),
                     str(row.get('correo', '')),
-                    str(row.get('genero', 'No especificado')),
+                    gender_code,
                     str(row.get('pais', '')),
-                    row.get('created_at', datetime.now().date()),
-                    row.get('source_system', 'MYSQL'),
-                    str(row.get('source_key', ''))
+                    row.get('created_at', datetime.now().date())
                 )
+
+                # Obtener ID generado y guardar mapeo
+                cursor.execute("SELECT @@IDENTITY")
+                customer_id = cursor.fetchone()[0]
+                customer_map[str(row['source_key'])] = int(customer_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_clientes)} clientes cargados")
+            return customer_map
         except Exception as e:
             logger.error(f"Error al cargar clientes: {str(e)}")
             raise
 
-    def load_dim_time(self, df_tiempo: pd.DataFrame) -> None:
-        """Carga dimensión DimTime"""
+    def load_dim_time(self, df_tiempo: pd.DataFrame) -> Dict:
+        """Carga dimensión DimTime y retorna mapeo fecha -> ID"""
         logger.info(f"Cargando {len(df_tiempo)} fechas...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            time_map = {}
 
             for idx, row in df_tiempo.iterrows():
+                # DWH schema: DimTime(id, year, month, day, date)
                 sql = """
-                    INSERT INTO DimTime (fecha, anio, mes, dia, trimestre)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO DimTime (date, year, month, day)
+                    VALUES (?, ?, ?, ?)
                 """
                 cursor.execute(sql,
                     row['fecha'],
                     int(row['anio']),
                     int(row['mes']),
-                    int(row['dia']),
-                    int(row['trimestre'])
+                    int(row['dia'])
                 )
+
+                # Obtener ID generado y guardar mapeo
+                cursor.execute("SELECT @@IDENTITY")
+                time_id = cursor.fetchone()[0]
+                time_map[str(row['fecha'])] = int(time_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_tiempo)} fechas cargadas")
+            return time_map
         except Exception as e:
             logger.error(f"Error al cargar tiempo: {str(e)}")
             raise
 
-    def load_dim_product(self, df_productos: pd.DataFrame, category_map: Dict) -> None:
-        """Carga dimensión DimProduct"""
+    def load_dim_product(self, df_productos: pd.DataFrame, category_map: Dict) -> Dict:
+        """Carga dimensión DimProduct y retorna mapeo source_key -> ID"""
         logger.info(f"Cargando {len(df_productos)} productos...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            product_map = {}
 
             for idx, row in df_productos.iterrows():
                 categoria_id = category_map.get(str(row.get('categoria', '')), 1)
 
+                # DWH schema: DimProduct(id, name, code, categoryId)
+                # Usar sku_oficial como 'code'
                 sql = """
-                    INSERT INTO DimProduct (nombre, sku, categoria_id, codigo_alt, source_system, source_key)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO DimProduct (name, code, categoryId)
+                    VALUES (?, ?, ?)
                 """
                 cursor.execute(sql,
                     str(row.get('nombre', '')),
                     str(row.get('sku_oficial', '')),
-                    int(categoria_id),
-                    str(row.get('codigo_alt', '')),
-                    row.get('source_system', 'MYSQL'),
-                    str(row.get('source_key', ''))
+                    int(categoria_id)
                 )
+
+                # Obtener ID generado y guardar mapeo
+                cursor.execute("SELECT @@IDENTITY")
+                product_id = cursor.fetchone()[0]
+                product_map[str(row['source_key'])] = int(product_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_productos)} productos cargados")
+            return product_map
         except Exception as e:
             logger.error(f"Error al cargar productos: {str(e)}")
             raise
 
     def load_dim_order(self, df_ordenes: pd.DataFrame) -> Dict:
-        """Carga dimensión DimOrder y retorna mapping de IDs"""
+        """Carga dimensión DimOrder y retorna mapping de source_key -> ID"""
         logger.info(f"Cargando {len(df_ordenes)} órdenes...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            order_tracking = {}
+            order_map = {}
 
             for idx, row in df_ordenes.iterrows():
+                # DWH schema: DimOrder(id, totalOrderUSD)
+                # Solo almacena el total de la orden
                 sql = """
-                    INSERT INTO DimOrder (fecha, canal, moneda, total_usd, source_system, source_key)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO DimOrder (totalOrderUSD)
+                    VALUES (?)
                 """
-                cursor.execute(sql,
-                    row.get('fecha', datetime.now()),
-                    str(row.get('canal', '')),
-                    str(row.get('moneda', 'USD')),
-                    float(row.get('total_usd', 0)),
-                    row.get('source_system', 'MYSQL'),
-                    str(row.get('source_key', ''))
-                )
+                cursor.execute(sql, float(row.get('total_usd', 0)))
 
                 # Obtener el ID generado
                 cursor.execute("SELECT @@IDENTITY")
                 order_id = cursor.fetchone()[0]
-                order_tracking[int(row['id'])] = int(order_id)
+                order_map[str(row['source_key'])] = int(order_id)
 
             conn.commit()
             cursor.close()
             conn.close()
             logger.info(f"[OK] {len(df_ordenes)} órdenes cargadas")
-            return order_tracking
+            return order_map
         except Exception as e:
             logger.error(f"Error al cargar órdenes: {str(e)}")
             raise
 
-    def load_fact_sales(self, df_fact: pd.DataFrame) -> None:
-        """Carga tabla de hechos FactSales"""
+    def load_fact_sales(self, df_fact: pd.DataFrame,
+                       product_map: Dict, time_map: Dict, order_map: Dict,
+                       channel_map: Dict, customer_map: Dict) -> None:
+        """Carga tabla de hechos FactSales con mapeo de IDs"""
         logger.info(f"Cargando {len(df_fact)} registros de FactSales...")
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            loaded_count = 0
 
             for idx, row in df_fact.iterrows():
+                # DWH schema: FactSales(id, productId, timeId, orderId, channelId, customerId,
+                #                       productCant, productUnitPriceUSD, lineTotalUSD,
+                #                       discountPercentage, created_at, exchangeRateId)
+
+                # Mapear IDs de dimensiones
+                product_id = product_map.get(str(row.get('producto_source_key', '')))
+                customer_id = customer_map.get(str(row.get('cliente_source_key', '')))
+                order_id = order_map.get(str(row.get('orden_source_key', '')))
+
+                # Para time y channel, buscar por valor
+                fecha = str(row.get('fecha', '')).split()[0] if row.get('fecha') else None
+                time_id = time_map.get(fecha, 1) if fecha else 1
+
+                canal = str(row.get('canal', ''))
+                channel_id = channel_map.get(canal, 1)
+
+                if not all([product_id, customer_id, order_id]):
+                    logger.warning(f"  Registro {idx} skipped: missing dimension IDs")
+                    continue
+
                 sql = """
-                    INSERT INTO FactSales (cliente_id, producto_id, tiempo_id, canal_id,
-                                          cantidad, precio_unit, monto_linea, monto_total_usd,
-                                          source_system, source_key)
+                    INSERT INTO FactSales (productId, timeId, orderId, channelId, customerId,
+                                          productCant, productUnitPriceUSD, lineTotalUSD,
+                                          discountPercentage, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 try:
                     cursor.execute(sql,
-                        int(row.get('cliente_id', 0)),
-                        int(row.get('producto_id', 0)),
-                        int(row.get('tiempo_id', 1)),
-                        int(row.get('canal_id', 1)),
+                        int(product_id),
+                        int(time_id),
+                        int(order_id),
+                        int(channel_id),
+                        int(customer_id),
                         int(row.get('cantidad', 1)),
                         float(row.get('precio_unit_limpio', 0)),
                         float(row.get('monto_linea', 0)),
-                        float(row.get('total_usd', 0)),
-                        row.get('source_system', 'MYSQL'),
-                        str(row.get('source_key', ''))
+                        float(row.get('discount_percentage', 0)),  # MySQL no tiene descuento, usar 0
+                        datetime.now()
                     )
+                    loaded_count += 1
                 except Exception as e:
                     logger.warning(f"  Registro {idx} skipped: {e}")
                     continue
@@ -268,7 +343,7 @@ class DataLoader:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"[OK] FactSales cargado")
+            logger.info(f"[OK] {loaded_count}/{len(df_fact)} registros de FactSales cargados")
         except Exception as e:
             logger.error(f"Error al cargar FactSales: {str(e)}")
             raise

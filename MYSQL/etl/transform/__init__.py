@@ -65,30 +65,63 @@ class DataTransformer:
     def _clean_numeric_string(self, value: str) -> float:
         """
         REGLA 5: Limpia string numérico con comas/puntos
-        Maneja formatos: '1,200.50', '1200,50', '1200.50', '1200'
+        Maneja formatos:
+        - '1,200.50' (USA: coma miles, punto decimal)
+        - '1.200,50' (Europa: punto miles, coma decimal)
+        - '1.750.00' (punto miles y punto decimal)
+        - '1.750.000,00' (múltiples separadores de miles)
+        - '1200,50' (coma decimal)
+        - '1200.50' (punto decimal)
         """
         if pd.isna(value) or value == '':
             return 0.0
 
         value = str(value).strip()
 
-        # Formato: 1,200.50 (coma como separador de miles, punto decimal)
-        if value.count(',') > 0 and value.count('.') > 0:
-            last_comma = value.rfind(',')
-            last_dot = value.rfind('.')
-            if last_dot > last_comma:
+        # Contar separadores
+        comma_count = value.count(',')
+        dot_count = value.count('.')
+
+        # CASO 1: Múltiples puntos (ej: 1.750.00 o 1.750.000.00)
+        # Los puntos son separadores de miles EXCEPTO el último que puede ser decimal
+        if dot_count > 1:
+            parts = value.split('.')
+            # Si la última parte tiene 2 dígitos, es decimal
+            if len(parts[-1]) == 2:
+                value = ''.join(parts[:-1]) + '.' + parts[-1]
+            else:
+                # Todos los puntos son separadores de miles
+                value = ''.join(parts)
+
+        # CASO 2: Múltiples comas (ej: 1,750,000)
+        # Las comas son separadores de miles
+        elif comma_count > 1:
+            value = value.replace(',', '')
+
+        # CASO 3: Formato mixto coma y punto (ej: 1,200.50 o 1.200,50)
+        elif comma_count > 0 and dot_count > 0:
+            last_comma_pos = value.rfind(',')
+            last_dot_pos = value.rfind('.')
+            # El que está más a la derecha es el decimal, el otro es miles
+            if last_dot_pos > last_comma_pos:
+                # Formato USA: 1,200.50
                 value = value.replace(',', '')
             else:
+                # Formato Europa: 1.200,50
                 value = value.replace('.', '').replace(',', '.')
-        # Formato: 1200,50 (coma como decimal)
-        elif value.count(',') == 1 and value.count('.') == 0:
-            value = value.replace(',', '.')
-        # Formato: 1,200 o 1.200 (sin decimales, detectar separador)
-        elif value.count(',') >= 1 and value.count('.') == 0:
-            if len(value.split(',')[-1]) == 3:
-                value = value.replace(',', '')
-            else:
+
+        # CASO 4: Solo una coma (ej: 1200,50 o 1,200)
+        elif comma_count == 1:
+            parts = value.split(',')
+            # Si la parte después de la coma tiene 2 dígitos, es decimal
+            if len(parts[-1]) == 2:
                 value = value.replace(',', '.')
+            # Si tiene 3 dígitos, es separador de miles
+            else:
+                value = value.replace(',', '')
+
+        # CASO 5: Solo un punto (ya es formato correcto para float)
+        # No requiere transformación
 
         try:
             return float(value)
@@ -350,32 +383,39 @@ class DataTransformer:
         """
         Construye tabla de hechos FactSales
         Realiza joins entre tablas transformadas
+        Incluye source_key fields para mapeo de IDs
         """
         logger.info("Construyendo FactSales...")
 
-        # Join con ordenes
+        # Join con ordenes - incluir source_key de orden
         fact = df_detalle.merge(
-            df_ordenes[['id', 'cliente_id', 'fecha', 'canal', 'total_usd']],
+            df_ordenes[['id', 'cliente_id', 'fecha', 'canal', 'total_usd', 'source_key']],
             left_on='orden_id',
             right_on='id',
-            how='left'
+            how='left',
+            suffixes=('', '_orden')
         )
+        fact.rename(columns={'source_key': 'orden_source_key'}, inplace=True)
 
-        # Join con productos
+        # Join con productos - incluir source_key de producto
         fact = fact.merge(
-            df_productos[['id', 'sku_oficial', 'categoria']],
+            df_productos[['id', 'sku_oficial', 'categoria', 'source_key']],
             left_on='producto_id',
             right_on='id',
-            how='left'
+            how='left',
+            suffixes=('', '_producto')
         )
+        fact.rename(columns={'source_key': 'producto_source_key'}, inplace=True)
 
-        # Join con clientes
+        # Join con clientes - incluir source_key de cliente
         fact = fact.merge(
-            df_clientes[['id', 'pais']],
+            df_clientes[['id', 'pais', 'source_key']],
             left_on='cliente_id',
             right_on='id',
-            how='left'
+            how='left',
+            suffixes=('', '_cliente')
         )
+        fact.rename(columns={'source_key': 'cliente_source_key'}, inplace=True)
 
         # Calcular monto de línea
         fact['monto_linea'] = fact['precio_unit_limpio'] * fact['cantidad']

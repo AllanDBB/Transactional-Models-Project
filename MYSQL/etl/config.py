@@ -58,6 +58,15 @@ class ETLConfig:
 
     BATCH_SIZE = 1000
     LOG_LEVEL = 'INFO'
-    LOG_FILE = 'etl_mysql_process.log'
+
+    # Crear directorio de logs si no existe
+    LOG_DIR = Path(__file__).parent / 'logs'
+    LOG_DIR.mkdir(exist_ok=True)
+
+    # Archivo de log con timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    LOG_FILE = str(LOG_DIR / f'etl_mysql_{timestamp}.log')
+
     MAX_ERRORS = 100
     DEFAULT_CRC_USD_RATE = 515.0  # Fallback si ExchangeRateHelper falla

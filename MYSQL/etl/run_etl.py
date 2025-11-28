@@ -11,6 +11,8 @@ Implementa las 5 reglas de integracion:
 import logging
 import sys
 from pathlib import Path
+import mysql.connector
+import pyodbc
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -39,6 +41,97 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
+def verify_database_connections(logger):
+    """
+    Verifica las conexiones a MySQL y SQL Server DW antes de iniciar el ETL.
+    Lista las tablas de ambas bases de datos para comprobar conectividad.
+
+    Returns:
+        bool: True si ambas conexiones son exitosas, False si falla alguna
+    """
+    logger.info("\n" + "=" * 80)
+    logger.info("VERIFICANDO CONEXIONES A BASES DE DATOS")
+    logger.info("=" * 80)
+
+    # ========== VERIFICAR MySQL ==========
+    logger.info("\n[1/2] Verificando conexion a MySQL (Fuente)...")
+    try:
+        mysql_params = DatabaseConfig.get_source_connection_params()
+        logger.info(f"  Host: {mysql_params['host']}:{mysql_params['port']}")
+        logger.info(f"  Database: {mysql_params['database']}")
+
+        conn = mysql.connector.connect(**mysql_params)
+        cursor = conn.cursor()
+
+        # Listar tablas
+        cursor.execute("SHOW TABLES")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        logger.info(f"  [OK] Conexion exitosa a MySQL")
+        logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
+        for table in tables:
+            cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            count = cursor.fetchone()[0]
+            logger.info(f"      - {table}: {count} registros")
+
+        cursor.close()
+        conn.close()
+
+    except mysql.connector.Error as e:
+        logger.error(f"  [ERROR] No se pudo conectar a MySQL: {str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"  [ERROR] Error inesperado con MySQL: {str(e)}")
+        return False
+
+    # ========== VERIFICAR SQL Server DW ==========
+    logger.info("\n[2/2] Verificando conexion a SQL Server DW (Destino)...")
+    try:
+        dw_conn_string = DatabaseConfig.get_dw_connection_string()
+        dw_config = DatabaseConfig.DW_DB
+        logger.info(f"  Server: {dw_config['server']}:{dw_config['port']}")
+        logger.info(f"  Database: {dw_config['database']}")
+
+        conn = pyodbc.connect(dw_conn_string)
+        cursor = conn.cursor()
+
+        # Listar tablas
+        cursor.execute("""
+            SELECT TABLE_NAME
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_TYPE = 'BASE TABLE'
+            AND TABLE_CATALOG = ?
+            ORDER BY TABLE_NAME
+        """, dw_config['database'])
+
+        tables = [row[0] for row in cursor.fetchall()]
+
+        logger.info(f"  [OK] Conexion exitosa a SQL Server DW")
+        logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
+        for table in tables:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                logger.info(f"      - {table}: {count} registros")
+            except:
+                logger.info(f"      - {table}: (no se pudo contar)")
+
+        cursor.close()
+        conn.close()
+
+    except pyodbc.Error as e:
+        logger.error(f"  [ERROR] No se pudo conectar a SQL Server DW: {str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"  [ERROR] Error inesperado con SQL Server DW: {str(e)}")
+        return False
+
+    logger.info("\n" + "=" * 80)
+    logger.info("[OK] TODAS LAS CONEXIONES VERIFICADAS EXITOSAMENTE")
+    logger.info("=" * 80)
+    return True
+
+
 def run_etl():
     """Ejecuta el proceso ETL completo con 5 reglas de integracion"""
     logger = setup_logging()
@@ -47,6 +140,12 @@ def run_etl():
     logger.info("=" * 80)
 
     try:
+        # ========== VERIFICAR CONEXIONES ==========
+        if not verify_database_connections(logger):
+            logger.error("[ERROR] No se pudo establecer conexion con las bases de datos")
+            logger.error("[ERROR] ETL CANCELADO - Verifique la conectividad y configuracion")
+            return False
+
         # ========== EXTRACT ==========
         logger.info("\n[FASE 1] EXTRAYENDO DATOS DE MySQL...")
         extractor = DataExtractor(DatabaseConfig.get_source_connection_params())
@@ -109,44 +208,51 @@ def run_etl():
         # except Exception as e:
         #     logger.warning(f"No se pudieron limpiar tablas: {e}")
 
-        # Cargar dimensiones
+        # Cargar dimensiones y capturar mapeos de IDs
         logger.info("\n[Cargando Dimensiones]")
+
+        # Cargar categorias y obtener mapeo
         try:
-            loader.load_dim_category(categorias)
+            category_map = loader.load_dim_category(categorias)
         except Exception as e:
             logger.warning(f"Error cargando categorias: {e}")
+            category_map = {}
 
+        # Cargar canales y obtener mapeo
         try:
-            loader.load_dim_channel(canales)
+            channel_map = loader.load_dim_channel(canales)
         except Exception as e:
             logger.warning(f"Error cargando canales: {e}")
+            channel_map = {}
 
+        # Cargar clientes y obtener mapeo
         try:
-            # Obtener mapping de categorias desde DWH
-            import pyodbc
-            conn = pyodbc.connect(DatabaseConfig.get_dw_connection_string())
-            cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT id, nombre FROM DimCategory")
-                category_map = {row[1]: row[0] for row in cursor.fetchall()}
-            except:
-                category_map = {}
-            cursor.close()
-            conn.close()
-
-            loader.load_dim_customer(clientes_trans)
-            loader.load_dim_time(dim_time)
-            loader.load_dim_product(productos_trans, category_map)
+            customer_map = loader.load_dim_customer(clientes_trans)
         except Exception as e:
-            logger.warning(f"Error cargando dimensiones: {e}")
+            logger.warning(f"Error cargando clientes: {e}")
+            customer_map = {}
 
-        # Cargar DimOrder
+        # Cargar tiempo y obtener mapeo
+        try:
+            time_map = loader.load_dim_time(dim_time)
+        except Exception as e:
+            logger.warning(f"Error cargando tiempo: {e}")
+            time_map = {}
+
+        # Cargar productos y obtener mapeo
+        try:
+            product_map = loader.load_dim_product(productos_trans, category_map)
+        except Exception as e:
+            logger.warning(f"Error cargando productos: {e}")
+            product_map = {}
+
+        # Cargar DimOrder y obtener mapeo
         logger.info("\n[Cargando DimOrder]")
         try:
-            order_tracking = loader.load_dim_order(ordenes_trans)
+            order_map = loader.load_dim_order(ordenes_trans)
         except Exception as e:
             logger.warning(f"Error cargando ordenes: {e}")
-            order_tracking = {}
+            order_map = {}
 
         # Construir y cargar FactSales
         logger.info("\n[Construyendo FactSales]")
@@ -157,9 +263,10 @@ def run_etl():
                 productos_trans,
                 clientes_trans,
                 DatabaseConfig.get_dw_connection_string(),
-                order_tracking
+                order_map
             )
-            loader.load_fact_sales(fact_sales)
+            # Pasar los mapeos de IDs a load_fact_sales
+            loader.load_fact_sales(fact_sales, product_map, time_map, order_map, channel_map, customer_map)
         except Exception as e:
             logger.warning(f"Error cargando FactSales: {e}")
             fact_sales = []
