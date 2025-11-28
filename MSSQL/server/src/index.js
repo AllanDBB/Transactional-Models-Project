@@ -13,6 +13,7 @@ app.use(express.static(staticDir));
 
 // Rutas API
 app.use('/api/mssql', require('./routes/mssqlRoutes'));
+app.use('/api/mysql', require('./routes/mysqlRoutes'));
 
 // Health check
 app.get('/health', (_req, res) => res.send('ok'));
