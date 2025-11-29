@@ -48,113 +48,106 @@ BEGIN
     -- ==========================================
     INSERT INTO Cliente (nombre, correo, genero, pais, created_at)
     SELECT
-        CONCAT(
-            CASE
-                WHEN (t.id % 42) = 1 THEN 'Juan García'
-                WHEN (t.id % 42) = 2 THEN 'María López'
-                WHEN (t.id % 42) = 3 THEN 'Carlos Rodríguez'
-                WHEN (t.id % 42) = 4 THEN 'Ana Martínez'
-                WHEN (t.id % 42) = 5 THEN 'Pedro Sánchez'
-                WHEN (t.id % 42) = 6 THEN 'Laura Hernández'
-                WHEN (t.id % 42) = 7 THEN 'Miguel Flores'
-                WHEN (t.id % 42) = 8 THEN 'Isabel Mora'
-                WHEN (t.id % 42) = 9 THEN 'Diego Ramírez'
-                WHEN (t.id % 42) = 10 THEN 'Elena Vega'
-                WHEN (t.id % 42) = 11 THEN 'Antonio Díaz'
-                WHEN (t.id % 42) = 12 THEN 'Rosa Jiménez'
-                WHEN (t.id % 42) = 13 THEN 'Fernando Acosta'
-                WHEN (t.id % 42) = 14 THEN 'Sofía Campos'
-                WHEN (t.id % 42) = 15 THEN 'Raúl Ortiz'
-                WHEN (t.id % 42) = 16 THEN 'Gabriela Brenes'
-                WHEN (t.id % 42) = 17 THEN 'Andrés Castro'
-                WHEN (t.id % 42) = 18 THEN 'Patricia Solís'
-                WHEN (t.id % 42) = 19 THEN 'Ricardo Medina'
-                WHEN (t.id % 42) = 20 THEN 'Cristina Arias'
-                WHEN (t.id % 42) = 21 THEN 'Julio Delgado'
-                WHEN (t.id % 42) = 22 THEN 'Sandra Vargas'
-                WHEN (t.id % 42) = 23 THEN 'Hector Zamora'
-                WHEN (t.id % 42) = 24 THEN 'Verónica Segura'
-                WHEN (t.id % 42) = 25 THEN 'Eduardo Navarro'
-                WHEN (t.id % 42) = 26 THEN 'Margarita Rojas'
-                WHEN (t.id % 42) = 27 THEN 'Sergio Quirós'
-                WHEN (t.id % 42) = 28 THEN 'Beatriz Reyes'
-                WHEN (t.id % 42) = 29 THEN 'Javier Montoya'
-                WHEN (t.id % 42) = 30 THEN 'Dolores Aguilar'
-                WHEN (t.id % 42) = 31 THEN 'Samuel Vindas'
-                WHEN (t.id % 42) = 32 THEN 'Catalina Chaves'
-                WHEN (t.id % 42) = 33 THEN 'Vicente Gómez'
-                WHEN (t.id % 42) = 34 THEN 'Marta Durán'
-                WHEN (t.id % 42) = 35 THEN 'Bonifacio Araya'
-                WHEN (t.id % 42) = 36 THEN 'Lorena Espinoza'
-                WHEN (t.id % 42) = 37 THEN 'Octavio Paniagua'
-                WHEN (t.id % 42) = 38 THEN 'Valentina Soto'
-                WHEN (t.id % 42) = 39 THEN 'Gustavo Benavides'
-                WHEN (t.id % 42) = 40 THEN 'Adriana Salazar'
-                WHEN (t.id % 42) = 41 THEN 'Leopoldo Cordero'
-                ELSE 'Pilar González'
-            END,
-            ' ',
-            LPAD(FLOOR(t.id / 42) + 1, 3, '0')
-        ) AS nombre,
+        CASE
+            WHEN (t.id % 42) = 1 THEN 'Juan Garcia'
+            WHEN (t.id % 42) = 2 THEN 'Maria Lopez'
+            WHEN (t.id % 42) = 3 THEN 'Carlos Rodriguez'
+            WHEN (t.id % 42) = 4 THEN 'Ana Martinez'
+            WHEN (t.id % 42) = 5 THEN 'Pedro Sanchez'
+            WHEN (t.id % 42) = 6 THEN 'Laura Hernandez'
+            WHEN (t.id % 42) = 7 THEN 'Miguel Flores'
+            WHEN (t.id % 42) = 8 THEN 'Isabel Mora'
+            WHEN (t.id % 42) = 9 THEN 'Diego Ramirez'
+            WHEN (t.id % 42) = 10 THEN 'Elena Vega'
+            WHEN (t.id % 42) = 11 THEN 'Antonio Diaz'
+            WHEN (t.id % 42) = 12 THEN 'Rosa Jimenez'
+            WHEN (t.id % 42) = 13 THEN 'Fernando Acosta'
+            WHEN (t.id % 42) = 14 THEN 'Sofia Campos'
+            WHEN (t.id % 42) = 15 THEN 'Raul Ortiz'
+            WHEN (t.id % 42) = 16 THEN 'Gabriela Brenes'
+            WHEN (t.id % 42) = 17 THEN 'Andres Castro'
+            WHEN (t.id % 42) = 18 THEN 'Patricia Solis'
+            WHEN (t.id % 42) = 19 THEN 'Ricardo Medina'
+            WHEN (t.id % 42) = 20 THEN 'Cristina Arias'
+            WHEN (t.id % 42) = 21 THEN 'Julio Delgado'
+            WHEN (t.id % 42) = 22 THEN 'Sandra Vargas'
+            WHEN (t.id % 42) = 23 THEN 'Hector Zamora'
+            WHEN (t.id % 42) = 24 THEN 'Veronica Segura'
+            WHEN (t.id % 42) = 25 THEN 'Eduardo Navarro'
+            WHEN (t.id % 42) = 26 THEN 'Margarita Rojas'
+            WHEN (t.id % 42) = 27 THEN 'Sergio Quiros'
+            WHEN (t.id % 42) = 28 THEN 'Beatriz Reyes'
+            WHEN (t.id % 42) = 29 THEN 'Javier Montoya'
+            WHEN (t.id % 42) = 30 THEN 'Dolores Aguilar'
+            WHEN (t.id % 42) = 31 THEN 'Samuel Vindas'
+            WHEN (t.id % 42) = 32 THEN 'Catalina Chaves'
+            WHEN (t.id % 42) = 33 THEN 'Vicente Gomez'
+            WHEN (t.id % 42) = 34 THEN 'Marta Duran'
+            WHEN (t.id % 42) = 35 THEN 'Bonifacio Araya'
+            WHEN (t.id % 42) = 36 THEN 'Lorena Espinoza'
+            WHEN (t.id % 42) = 37 THEN 'Octavio Paniagua'
+            WHEN (t.id % 42) = 38 THEN 'Valentina Soto'
+            WHEN (t.id % 42) = 39 THEN 'Gustavo Benavides'
+            WHEN (t.id % 42) = 40 THEN 'Adriana Salazar'
+            WHEN (t.id % 42) = 41 THEN 'Leopoldo Cordero'
+            ELSE 'Pilar Gonzalez'
+        END AS nombre,
         LOWER(CONCAT(
-            REPLACE(
-                CASE
-                    WHEN (t.id % 42) = 1 THEN 'juan.garcia'
-                    WHEN (t.id % 42) = 2 THEN 'maria.lopez'
-                    WHEN (t.id % 42) = 3 THEN 'carlos.rodriguez'
-                    WHEN (t.id % 42) = 4 THEN 'ana.martinez'
-                    WHEN (t.id % 42) = 5 THEN 'pedro.sanchez'
-                    WHEN (t.id % 42) = 6 THEN 'laura.hernandez'
-                    WHEN (t.id % 42) = 7 THEN 'miguel.flores'
-                    WHEN (t.id % 42) = 8 THEN 'isabel.mora'
-                    WHEN (t.id % 42) = 9 THEN 'diego.ramirez'
-                    WHEN (t.id % 42) = 10 THEN 'elena.vega'
-                    WHEN (t.id % 42) = 11 THEN 'antonio.diaz'
-                    WHEN (t.id % 42) = 12 THEN 'rosa.jimenez'
-                    WHEN (t.id % 42) = 13 THEN 'fernando.acosta'
-                    WHEN (t.id % 42) = 14 THEN 'sofia.campos'
-                    WHEN (t.id % 42) = 15 THEN 'raul.ortiz'
-                    WHEN (t.id % 42) = 16 THEN 'gabriela.brenes'
-                    WHEN (t.id % 42) = 17 THEN 'andres.castro'
-                    WHEN (t.id % 42) = 18 THEN 'patricia.solis'
-                    WHEN (t.id % 42) = 19 THEN 'ricardo.medina'
-                    WHEN (t.id % 42) = 20 THEN 'cristina.arias'
-                    WHEN (t.id % 42) = 21 THEN 'julio.delgado'
-                    WHEN (t.id % 42) = 22 THEN 'sandra.vargas'
-                    WHEN (t.id % 42) = 23 THEN 'hector.zamora'
-                    WHEN (t.id % 42) = 24 THEN 'veronica.segura'
-                    WHEN (t.id % 42) = 25 THEN 'eduardo.navarro'
-                    WHEN (t.id % 42) = 26 THEN 'margarita.rojas'
-                    WHEN (t.id % 42) = 27 THEN 'sergio.quiros'
-                    WHEN (t.id % 42) = 28 THEN 'beatriz.reyes'
-                    WHEN (t.id % 42) = 29 THEN 'javier.montoya'
-                    WHEN (t.id % 42) = 30 THEN 'dolores.aguilar'
-                    WHEN (t.id % 42) = 31 THEN 'samuel.vindas'
-                    WHEN (t.id % 42) = 32 THEN 'catalina.chaves'
-                    WHEN (t.id % 42) = 33 THEN 'vicente.gomez'
-                    WHEN (t.id % 42) = 34 THEN 'marta.duran'
-                    WHEN (t.id % 42) = 35 THEN 'bonifacio.araya'
-                    WHEN (t.id % 42) = 36 THEN 'lorena.espinoza'
-                    WHEN (t.id % 42) = 37 THEN 'octavio.paniagua'
-                    WHEN (t.id % 42) = 38 THEN 'valentina.soto'
-                    WHEN (t.id % 42) = 39 THEN 'gustavo.benavides'
-                    WHEN (t.id % 42) = 40 THEN 'adriana.salazar'
-                    WHEN (t.id % 42) = 41 THEN 'leopoldo.cordero'
-                    ELSE 'pilar.gonzalez'
-                END,
-                ' ',
-                ''
-            ),
+            CASE
+                WHEN (t.id % 42) = 1 THEN 'juan.garcia'
+                WHEN (t.id % 42) = 2 THEN 'maria.lopez'
+                WHEN (t.id % 42) = 3 THEN 'carlos.rodriguez'
+                WHEN (t.id % 42) = 4 THEN 'ana.martinez'
+                WHEN (t.id % 42) = 5 THEN 'pedro.sanchez'
+                WHEN (t.id % 42) = 6 THEN 'laura.hernandez'
+                WHEN (t.id % 42) = 7 THEN 'miguel.flores'
+                WHEN (t.id % 42) = 8 THEN 'isabel.mora'
+                WHEN (t.id % 42) = 9 THEN 'diego.ramirez'
+                WHEN (t.id % 42) = 10 THEN 'elena.vega'
+                WHEN (t.id % 42) = 11 THEN 'antonio.diaz'
+                WHEN (t.id % 42) = 12 THEN 'rosa.jimenez'
+                WHEN (t.id % 42) = 13 THEN 'fernando.acosta'
+                WHEN (t.id % 42) = 14 THEN 'sofia.campos'
+                WHEN (t.id % 42) = 15 THEN 'raul.ortiz'
+                WHEN (t.id % 42) = 16 THEN 'gabriela.brenes'
+                WHEN (t.id % 42) = 17 THEN 'andres.castro'
+                WHEN (t.id % 42) = 18 THEN 'patricia.solis'
+                WHEN (t.id % 42) = 19 THEN 'ricardo.medina'
+                WHEN (t.id % 42) = 20 THEN 'cristina.arias'
+                WHEN (t.id % 42) = 21 THEN 'julio.delgado'
+                WHEN (t.id % 42) = 22 THEN 'sandra.vargas'
+                WHEN (t.id % 42) = 23 THEN 'hector.zamora'
+                WHEN (t.id % 42) = 24 THEN 'veronica.segura'
+                WHEN (t.id % 42) = 25 THEN 'eduardo.navarro'
+                WHEN (t.id % 42) = 26 THEN 'margarita.rojas'
+                WHEN (t.id % 42) = 27 THEN 'sergio.quiros'
+                WHEN (t.id % 42) = 28 THEN 'beatriz.reyes'
+                WHEN (t.id % 42) = 29 THEN 'javier.montoya'
+                WHEN (t.id % 42) = 30 THEN 'dolores.aguilar'
+                WHEN (t.id % 42) = 31 THEN 'samuel.vindas'
+                WHEN (t.id % 42) = 32 THEN 'catalina.chaves'
+                WHEN (t.id % 42) = 33 THEN 'vicente.gomez'
+                WHEN (t.id % 42) = 34 THEN 'marta.duran'
+                WHEN (t.id % 42) = 35 THEN 'bonifacio.araya'
+                WHEN (t.id % 42) = 36 THEN 'lorena.espinoza'
+                WHEN (t.id % 42) = 37 THEN 'octavio.paniagua'
+                WHEN (t.id % 42) = 38 THEN 'valentina.soto'
+                WHEN (t.id % 42) = 39 THEN 'gustavo.benavides'
+                WHEN (t.id % 42) = 40 THEN 'adriana.salazar'
+                WHEN (t.id % 42) = 41 THEN 'leopoldo.cordero'
+                ELSE 'pilar.gonzalez'
+            END,
             LPAD(FLOOR(t.id / 42) + 1, 3, '0'),
             '@example.com'
         )) AS correo,
         CASE
+            WHEN (t.id % 30) = 0 THEN 'X'
             WHEN (t.id % 2) = 0 THEN 'M'
             ELSE 'F'
         END AS genero,
         CASE
             WHEN t.id % 3 = 0 THEN 'Costa Rica'
-            WHEN t.id % 3 = 1 THEN 'Panamá'
+            WHEN t.id % 3 = 1 THEN 'Panama'
             ELSE 'Nicaragua'
         END AS pais,
         DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL (t.id % 365) DAY), '%Y-%m-%d') AS created_at
@@ -183,18 +176,18 @@ BEGIN
     SELECT
         CONCAT('ALT-', LPAD(t.id, 5, '0')) AS codigo_alt,
         CASE
-            WHEN (t.id % 5) = 0 THEN CONCAT('Laptop Pro ', t.id)
-            WHEN (t.id % 5) = 1 THEN CONCAT('Monitor 27" ', t.id)
-            WHEN (t.id % 5) = 2 THEN CONCAT('Teclado Mecánico ', t.id)
-            WHEN (t.id % 5) = 3 THEN CONCAT('Mouse Inalámbrico ', t.id)
-            ELSE CONCAT('Webcam HD ', t.id)
+            WHEN (t.id % 5) = 0 THEN CONCAT('Laptop Pro Model', t.id)
+            WHEN (t.id % 5) = 1 THEN CONCAT('Monitor 27 inch', t.id)
+            WHEN (t.id % 5) = 2 THEN CONCAT('Mechanical Keyboard ', t.id)
+            WHEN (t.id % 5) = 3 THEN CONCAT('Wireless Mouse ', t.id)
+            ELSE CONCAT('HD Webcam ', t.id)
         END AS nombre,
         CASE
-            WHEN (t.id % 5) = 0 THEN 'Computadoras'
-            WHEN (t.id % 5) = 1 THEN 'Periféricos de Visualización'
-            WHEN (t.id % 5) = 2 THEN 'Periféricos de Entrada'
-            WHEN (t.id % 5) = 3 THEN 'Accesorios'
-            ELSE 'Accesorios'
+            WHEN (t.id % 5) = 0 THEN 'Computers'
+            WHEN (t.id % 5) = 1 THEN 'Display Peripherals'
+            WHEN (t.id % 5) = 2 THEN 'Input Peripherals'
+            WHEN (t.id % 5) = 3 THEN 'Accessories'
+            ELSE 'Accessories'
         END AS categoria
     FROM (
         SELECT (@prow:=@prow+1) AS id
@@ -320,4 +313,4 @@ END //
 
 DELIMITER ;
 
-SELECT '[OK] Stored Procedure sp_generar_datos creado exitosamente' AS '';
+SELECT '[OK] Stored Procedure sp_generar_datos created successfully' AS '';

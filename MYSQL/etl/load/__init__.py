@@ -243,6 +243,7 @@ class DataLoader:
 
                 try:
                     # Insert fact record with all foreign keys
+                    # Note: precio_unit_usd and monto_linea are already converted from source currency to USD
                     conn.execute(
                         """INSERT INTO FactSales (productId, timeId, orderId, channelId, customerId,
                                                    productCant, productUnitPriceUSD, lineTotalUSD,
@@ -250,7 +251,7 @@ class DataLoader:
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         int(product_id), int(time_id), int(order_id), int(channel_id), int(customer_id),
                         int(row.get('cantidad', 1)),
-                        float(row.get('precio_unit_limpio', 0)),
+                        float(row.get('precio_unit_usd', 0)),
                         float(row.get('monto_linea', 0)),
                         float(row.get('discount_percentage', 0)),
                         datetime.now()

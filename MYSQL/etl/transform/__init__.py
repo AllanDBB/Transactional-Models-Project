@@ -180,8 +180,9 @@ class DataTransformer:
             'crc_converted': crc_rows.sum()
         }
 
-    def transform_orden_detalle(self, df_detalle: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """Rule 5: Amount transformation (precio_unit string to decimal)."""
+    def transform_orden_detalle(self, df_detalle: pd.DataFrame, df_ordenes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+        """Rule 5: Amount transformation (precio_unit string to decimal).
+        Rule 2: Convert prices from order currency (CRC/USD) to USD."""
         logger.info(f"Transformando {len(df_detalle)} detalles de ordenes...")
 
         df = df_detalle.copy()
@@ -189,11 +190,43 @@ class DataTransformer:
         df['source_key'] = df['id'].astype(str)
         df['precio_unit_limpio'] = df['precio_unit'].apply(self._clean_numeric_string)
 
+        # Join with orders to get currency and date information
+        df = df.merge(
+            df_ordenes[['id', 'moneda', 'fecha']],
+            left_on='orden_id', right_on='id', how='left', suffixes=('', '_orden')
+        )
+
+        # Convert precio_unit from order currency to USD
+        crc_rows = df['moneda'] == 'CRC'
+        if crc_rows.any():
+            if self.exchange_rate_helper:
+                logger.info(f"[REGLA 2] Convirtiendo {crc_rows.sum()} precios unitarios CRC->USD")
+                df['precio_unit_usd'] = df.apply(
+                    lambda row: self.exchange_rate_helper.convertir_monto(
+                        row['precio_unit_limpio'], 'CRC', 'USD',
+                        row['fecha'].date() if pd.notna(row['fecha']) else None
+                    ) if row['moneda'] == 'CRC' else row['precio_unit_limpio'],
+                    axis=1
+                )
+
+                failed_conversions = df[crc_rows & df['precio_unit_usd'].isna()]
+                if len(failed_conversions) > 0:
+                    logger.warning(f"[REGLA 2] {len(failed_conversions)} precios sin tasa - usando default")
+                    df.loc[crc_rows & df['precio_unit_usd'].isna(), 'precio_unit_usd'] = \
+                        df.loc[crc_rows & df['precio_unit_usd'].isna(), 'precio_unit_limpio'] / ETLConfig.DEFAULT_CRC_USD_RATE
+            else:
+                logger.warning(f"[REGLA 2] {crc_rows.sum()} precios en CRC - usando tasa por defecto")
+                df.loc[crc_rows, 'precio_unit_usd'] = df.loc[crc_rows, 'precio_unit_limpio'] / ETLConfig.DEFAULT_CRC_USD_RATE
+                df.loc[~crc_rows, 'precio_unit_usd'] = df.loc[~crc_rows, 'precio_unit_limpio']
+        else:
+            df['precio_unit_usd'] = df['precio_unit_limpio']
+
         logger.info(f"[OK] {len(df)} detalles transformados")
 
         return df, {
             'total': len(df),
-            'precio_cleaned': len(df[df['precio_unit_limpio'] > 0])
+            'precio_cleaned': len(df[df['precio_unit_limpio'] > 0]),
+            'crc_converted': crc_rows.sum()
         }
 
     def extract_categorias(self, df_productos: pd.DataFrame) -> pd.DataFrame:
@@ -285,8 +318,8 @@ class DataTransformer:
         )
         fact.rename(columns={'source_key': 'cliente_source_key'}, inplace=True)
 
-        # Calculate line total (quantity * unit price)
-        fact['monto_linea'] = fact['precio_unit_limpio'] * fact['cantidad']
+        # Calculate line total in USD (quantity * unit price in USD)
+        fact['monto_linea'] = fact['precio_unit_usd'] * fact['cantidad']
 
         logger.info(f"[OK] {len(fact)} registros en FactSales")
 

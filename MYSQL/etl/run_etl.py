@@ -190,8 +190,9 @@ def run_etl():
         # REGLA 5: Transformacion de totales (string -> decimal)
         ordenes_trans, track_ord = transformer.transform_ordenes(ordenes)
 
+        # REGLA 2: Normalizacion de moneda (CRC -> USD) en precios unitarios
         # REGLA 5: Transformacion de totales (limpiar comas/puntos)
-        detalle_trans, track_det = transformer.transform_orden_detalle(orden_detalle)
+        detalle_trans, track_det = transformer.transform_orden_detalle(orden_detalle, ordenes_trans)
 
         logger.info(f"[OK] Clientes transformados: {len(clientes_trans)}")
         logger.info(f"[OK] Productos transformados: {len(productos_trans)}")
