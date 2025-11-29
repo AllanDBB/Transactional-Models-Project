@@ -1,12 +1,15 @@
 """
-Database and ETL configuration for MySQL to MSSQL Data Warehouse ETL.
-Reads from environment variables (.env file in MYSQL/)
+Database and ETL configuration.
+
+Reads from environment variables (.env file in etl/ directory).
+Provides connection parameters for MySQL source and MSSQL DW destination.
 """
 import os
 from typing import Dict
 from pathlib import Path
 from datetime import datetime
 
+# Load environment variables from .env file
 try:
     from dotenv import load_dotenv
     env_path = Path(__file__).resolve().parent / '.env'
@@ -16,7 +19,7 @@ except ImportError:
 
 
 class DatabaseConfig:
-    """Database connection configuration for source and destination."""
+    """Database connection configuration for source (MySQL) and destination (MSSQL DW)."""
 
     SOURCE_DB = {
         'host': os.getenv('MYSQL_HOST', 'localhost'),
@@ -37,10 +40,12 @@ class DatabaseConfig:
 
     @staticmethod
     def get_source_connection_params() -> Dict:
+        """Get MySQL connection parameters."""
         return DatabaseConfig.SOURCE_DB
 
     @staticmethod
     def get_dw_connection_string() -> str:
+        """Build MSSQL DW ODBC connection string."""
         config = DatabaseConfig.DW_DB
         return (f"Driver={config['driver']};"
                 f"Server={config['server']},{config['port']};"
@@ -50,13 +55,17 @@ class DatabaseConfig:
 
 
 class ETLConfig:
-    """General ETL configuration and logging setup."""
+    """ETL runtime configuration and logging setup."""
 
+    # Processing settings
     BATCH_SIZE = 1000
     LOG_LEVEL = 'INFO'
     MAX_ERRORS = 100
+
+    # Currency conversion fallback
     DEFAULT_CRC_USD_RATE = 515.0
 
+    # Logging setup
     LOG_DIR = Path(__file__).parent / 'logs'
     LOG_DIR.mkdir(exist_ok=True)
 

@@ -1,23 +1,26 @@
 """
-Script principal del ETL: MySQL Transaccional -> MSSQL Data Warehouse
-Orquesta los procesos de Extract, Transform y Load
-Implementa las 5 reglas de integracion:
-1. Homologacion de productos (codigo_alt -> tabla puente)
-2. Normalizacion de moneda (CRC -> USD)
-3. Estandarizacion de genero (M/F/X -> valores unicos)
-4. Conversion de fechas (VARCHAR -> DATE/DATETIME)
-5. Transformacion de totales (string con comas/puntos -> decimal)
+Main ETL orchestration: MySQL Transactional -> MSSQL Data Warehouse
+
+Implements 5 integration rules:
+1. Product homologation (codigo_alt -> official SKU mapping)
+2. Currency normalization (CRC -> USD conversion)
+3. Gender standardization (M/F/X -> standardized values)
+4. Date conversion (VARCHAR -> DATE/DATETIME)
+5. Amount transformation (string with formatting -> decimal)
+
+Idempotent behavior: Can be run multiple times safely without duplicating data.
 """
 import logging
 import sys
 from pathlib import Path
 import mysql.connector
 import pyodbc
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Shared helper de tipos de cambio
-root_path = Path(__file__).resolve().parents[2]
+# Shared utilities
+root_path = Path(__file__).resolve().parents[1]
 shared_path = root_path / "shared"
 sys.path.insert(0, str(shared_path))
 
@@ -25,11 +28,15 @@ from config import DatabaseConfig, ETLConfig
 from extract import DataExtractor
 from transform import DataTransformer
 from load import DataLoader
-from ExchangeRateHelper import ExchangeRateHelper  # type: ignore
+
+try:
+    from ExchangeRateHelper import ExchangeRateHelper
+except (ImportError, ModuleNotFoundError):
+    ExchangeRateHelper = None
 
 
 def setup_logging():
-    """Configura el logging"""
+    """Configure logging to file and console."""
     logging.basicConfig(
         level=getattr(logging, ETLConfig.LOG_LEVEL),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -41,297 +48,227 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
-def verify_database_connections(logger):
+def verify_connections(logger) -> bool:
     """
-    Verifica las conexiones a MySQL y SQL Server DW antes de iniciar el ETL.
-    Lista las tablas de ambas bases de datos para comprobar conectividad.
+    Verify connectivity to MySQL source and MSSQL DW.
 
-    Returns:
-        bool: True si ambas conexiones son exitosas, False si falla alguna
+    Returns True if both connections successful, False otherwise.
     """
     logger.info("\n" + "=" * 80)
-    logger.info("VERIFICANDO CONEXIONES A BASES DE DATOS")
+    logger.info("VERIFYING DATABASE CONNECTIONS")
     logger.info("=" * 80)
 
-    logger.info("\n[1/2] Verificando conexion a MySQL (Fuente)...")
+    # Check MySQL
+    logger.info("\n[MySQL] Checking transactional source...")
     try:
         mysql_params = DatabaseConfig.get_source_connection_params()
         logger.info(f"  Host: {mysql_params['host']}:{mysql_params['port']}")
         logger.info(f"  Database: {mysql_params['database']}")
 
-        with mysql.connector.connect(**mysql_params) as conn:
-            with conn.cursor() as cur:
-                tables = [row[0] for row in cur.execute("SHOW TABLES", multi=False) or cur.fetchall()]
+        # Use pandas.read_sql to avoid cursor management
+        conn = mysql.connector.connect(**mysql_params)
+        try:
+            tables_df = pd.read_sql("SHOW TABLES", conn)
+            tables = tables_df.iloc[:, 0].tolist()
 
-                logger.info(f"  [OK] Conexion exitosa a MySQL")
-                logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
-                for table in tables:
-                    cur.execute(f"SELECT COUNT(*) FROM {table}")
-                    logger.info(f"      - {table}: {cur.fetchone()[0]} registros")
+            logger.info(f"  Tables found: {len(tables)}")
+            for table in sorted(tables):
+                count_df = pd.read_sql(f"SELECT COUNT(*) as cnt FROM {table}", conn)
+                count = count_df.iloc[0, 0]
+                logger.info(f"    - {table}: {count} rows")
+        finally:
+            conn.close()
 
-    except mysql.connector.Error as e:
-        logger.error(f"  [ERROR] No se pudo conectar a MySQL: {str(e)}")
-        return False
+        logger.info("  Connection: SUCCESS")
+
     except Exception as e:
-        logger.error(f"  [ERROR] Error inesperado con MySQL: {str(e)}")
+        logger.error(f"  Connection FAILED: {str(e)}")
         return False
 
-    logger.info("\n[2/2] Verificando conexion a SQL Server DW (Destino)...")
+    # Check MSSQL DW
+    logger.info("\n[MSSQL] Checking data warehouse...")
     try:
-        dw_conn_string = DatabaseConfig.get_dw_connection_string()
         dw_config = DatabaseConfig.DW_DB
         logger.info(f"  Server: {dw_config['server']}:{dw_config['port']}")
         logger.info(f"  Database: {dw_config['database']}")
 
-        with pyodbc.connect(dw_conn_string) as conn:
+        with pyodbc.connect(DatabaseConfig.get_dw_connection_string()) as conn:
             tables = [row[0] for row in conn.execute("""
-                SELECT TABLE_NAME
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_TYPE = 'BASE TABLE'
-                AND TABLE_CATALOG = ?
+                SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = ?
                 ORDER BY TABLE_NAME
             """, dw_config['database']).fetchall()]
 
-            logger.info(f"  [OK] Conexion exitosa a SQL Server DW")
-            logger.info(f"  [OK] Tablas encontradas ({len(tables)}):")
-            for table in tables:
+            logger.info(f"  Tables found: {len(tables)}")
+            for table in sorted(tables):
                 try:
                     count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                    logger.info(f"      - {table}: {count} registros")
+                    logger.info(f"    - {table}: {count} rows")
                 except:
-                    logger.info(f"      - {table}: (no se pudo contar)")
+                    logger.info(f"    - {table}: (unable to count)")
 
-    except pyodbc.Error as e:
-        logger.error(f"  [ERROR] No se pudo conectar a SQL Server DW: {str(e)}")
-        return False
+        logger.info("  Connection: SUCCESS")
+
     except Exception as e:
-        logger.error(f"  [ERROR] Error inesperado con SQL Server DW: {str(e)}")
+        logger.error(f"  Connection FAILED: {str(e)}")
         return False
 
     logger.info("\n" + "=" * 80)
-    logger.info("[OK] TODAS LAS CONEXIONES VERIFICADAS EXITOSAMENTE")
-    logger.info("=" * 80)
     return True
 
 
 def run_etl():
-    """
-    Execute complete ETL process: MySQL -> MSSQL Data Warehouse
-
-    Implements 5 Integration Rules:
-    1. Product homologation (alternative codes mapping table)
-    2. Currency normalization (CRC -> USD using exchange rates)
-    3. Gender standardization (M/F/X -> Masculino/Femenino/No especificado)
-    4. Date conversion (VARCHAR -> DATE/DATETIME)
-    5. Amount transformation (string with commas/dots -> DECIMAL)
-    """
+    """Execute complete ETL pipeline."""
     logger = setup_logging()
-    logger.info("=" * 80)
-    logger.info("INICIANDO PROCESO ETL: MySQL -> DWH (5 Reglas de Integracion)")
+
+    logger.info("\n" + "=" * 80)
+    logger.info("MYSQL ETL PIPELINE - 5 INTEGRATION RULES")
     logger.info("=" * 80)
 
     try:
-        # ========== VERIFY CONNECTIONS ==========
-        if not verify_database_connections(logger):
-            logger.error("[ERROR] No se pudo establecer conexion con las bases de datos")
-            logger.error("[ERROR] ETL CANCELADO - Verifique la conectividad y configuracion")
+        # ====================================================================
+        # PHASE 1: VERIFY CONNECTIVITY
+        # ====================================================================
+        if not verify_connections(logger):
+            logger.error("Database connection verification failed - aborting ETL")
             return False
 
-        # ========== EXTRACT ==========
-        logger.info("\n[FASE 1] EXTRAYENDO DATOS DE MySQL...")
+        # ====================================================================
+        # PHASE 2: EXTRACT
+        # ====================================================================
+        logger.info("\n[PHASE 1/4] EXTRACTING DATA FROM MYSQL...")
         extractor = DataExtractor(DatabaseConfig.get_source_connection_params())
-
-        # Extract all source tables
         clientes, productos, ordenes, orden_detalle = extractor.extract_all()
 
-        logger.info(f"[OK] Clientes extraidos: {len(clientes)}")
-        logger.info(f"[OK] Productos extraidos: {len(productos)}")
-        logger.info(f"[OK] Ordenes extraidas: {len(ordenes)}")
-        logger.info(f"[OK] Detalles extraidos: {len(orden_detalle)}")
+        logger.info(f"Extracted: {len(clientes)} customers, {len(productos)} products, "
+                   f"{len(ordenes)} orders, {len(orden_detalle)} details")
 
-        # ========== TRANSFORM ==========
-        logger.info("\n[FASE 2] TRANSFORMANDO DATOS (5 REGLAS)...")
+        # ====================================================================
+        # PHASE 3: INITIALIZE TRANSFORMER WITH EXCHANGE RATES
+        # ====================================================================
+        logger.info("\n[PHASE 2/4] INITIALIZING TRANSFORMER...")
 
-        # Try to use real exchange rates from DWH (Rule 2)
+        exchange_helper = None
         try:
             exchange_helper = ExchangeRateHelper(DatabaseConfig.get_dw_connection_string())
             if exchange_helper.conectar():
-                # Check if exchange rates are available
                 count = exchange_helper.conn.execute(
                     "SELECT COUNT(*) FROM DimExchangeRate WHERE fromCurrency = 'CRC' AND toCurrency = 'USD'"
                 ).fetchone()[0]
 
                 if count > 0:
-                    logger.info(f"[OK] ExchangeRateHelper habilitado - {count} tasas CRC->USD disponibles")
-                    transformer = DataTransformer(exchange_rate_helper=exchange_helper)
+                    logger.info(f"Exchange rates enabled: {count} CRC->USD rates available")
                 else:
-                    logger.warning("[WARN] No hay tasas de cambio en DimExchangeRate")
-                    logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
+                    logger.warning("No exchange rates found - will use default rate (515.0)")
                     exchange_helper.cerrar()
-                    transformer = DataTransformer(exchange_rate_helper=None)
+                    exchange_helper = None
             else:
-                logger.warning("[WARN] No se pudo conectar al ExchangeRateHelper")
-                logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
-                transformer = DataTransformer(exchange_rate_helper=None)
+                logger.warning("Could not connect to DWH for exchange rates - using default")
+                exchange_helper = None
         except Exception as e:
-            logger.warning(f"[WARN] Error inicializando ExchangeRateHelper: {e}")
-            logger.info("[INFO] Usando tasa por defecto (515.0) para conversiones CRC->USD")
-            transformer = DataTransformer(exchange_rate_helper=None)
+            logger.warning(f"Exchange rate initialization failed: {e} - using default rate")
+            exchange_helper = None
 
-        # REGLA 3: Estandarizacion de genero (M/F/X -> valores unicos)
-        # REGLA 4: Conversion de fechas (VARCHAR -> DATE)
+        # ====================================================================
+        # PHASE 4: TRANSFORM
+        # ====================================================================
+        logger.info("\n[PHASE 2/4] TRANSFORMING DATA (5 INTEGRATION RULES)...")
+        transformer = DataTransformer(exchange_rate_helper=exchange_helper)
+
+        # Rule 3: Gender standardization, Rule 4: Date parsing
         clientes_trans, track_cli = transformer.transform_clientes(clientes)
 
-        # REGLA 1: Homologacion de productos (codigo_alt -> tabla puente)
+        # Rule 1: Product homologation
         productos_trans, track_prod = transformer.transform_productos(productos)
 
-        # REGLA 2: Normalizacion de moneda (CRC -> USD)
-        # REGLA 4: Conversion de fechas (VARCHAR -> DATETIME)
-        # REGLA 5: Transformacion de totales (string -> decimal)
+        # Rule 2: Currency conversion, Rule 4: Date conversion, Rule 5: Amount formatting
         ordenes_trans, track_ord = transformer.transform_ordenes(ordenes)
 
-        # REGLA 2: Normalizacion de moneda (CRC -> USD) en precios unitarios
-        # REGLA 5: Transformacion de totales (limpiar comas/puntos)
+        # Rule 2: Currency conversion for line items, Rule 5: Amount formatting
         detalle_trans, track_det = transformer.transform_orden_detalle(orden_detalle, ordenes_trans)
 
-        logger.info(f"[OK] Clientes transformados: {len(clientes_trans)}")
-        logger.info(f"[OK] Productos transformados: {len(productos_trans)}")
-        logger.info(f"[OK] Ordenes transformadas: {len(ordenes_trans)}")
-        logger.info(f"[OK] Detalles transformados: {len(detalle_trans)}")
+        logger.info(f"Transformed: {len(clientes_trans)} customers, {len(productos_trans)} products, "
+                   f"{len(ordenes_trans)} orders, {len(detalle_trans)} details")
 
-        # Extraer dimensiones
+        # Extract dimension data
         categorias = transformer.extract_categorias(productos_trans)
         canales = transformer.extract_canales(ordenes_trans)
         dim_time = transformer.generate_dimtime(ordenes_trans)
-
-        # REGLA 1: Construir tabla puente de mapeo
         product_mapping = transformer.build_product_mapping(productos_trans)
 
-        logger.info(f"[OK] Categorias extraidas: {len(categorias)}")
-        logger.info(f"[OK] Canales extraidos: {len(canales)}")
-        logger.info(f"[OK] Fechas en DimTime: {len(dim_time)}")
-        logger.info(f"[OK] Mapeos de productos (REGLA 1): {len(product_mapping)}")
+        logger.info(f"Dimensions: {len(categorias)} categories, {len(canales)} channels, "
+                   f"{len(dim_time)} dates, {len(product_mapping)} product mappings")
 
-        # ========== LOAD ==========
-        logger.info("\n[FASE 3] CARGANDO DATOS AL DWH...")
+        # Build fact table
+        fact_sales = transformer.build_fact_sales(
+            detalle_trans, ordenes_trans, productos_trans, clientes_trans,
+            DatabaseConfig.get_dw_connection_string(), {}
+        )
+
+        # ====================================================================
+        # PHASE 5: LOAD
+        # ====================================================================
+        logger.info("\n[PHASE 3/4] LOADING DATA TO DWH...")
         loader = DataLoader(DatabaseConfig.get_dw_connection_string())
 
-        # Limpiar tablas (opcional, comentar si se quiere append)
-        # try:
-        #     loader.truncate_tables(['FactSales', 'DimCustomer', 'DimProduct', 'DimChannel', 'DimCategory', 'DimTime'])
-        # except Exception as e:
-        #     logger.warning(f"No se pudieron limpiar tablas: {e}")
+        # Uncomment next line to clean all tables before loading (fresh load)
+        # loader.truncate_tables(['FactSales', 'DimProduct', 'DimCustomer', 'DimChannel', 'DimCategory', 'DimTime'])
 
-        # Cargar dimensiones y capturar mapeos de IDs
-        logger.info("\n[Cargando Dimensiones]")
+        logger.info("\nLoading dimensions...")
+        category_map = loader.load_dim_category(categorias)
+        channel_map = loader.load_dim_channel(canales)
+        customer_map = loader.load_dim_customer(clientes_trans)
+        time_map = loader.load_dim_time(dim_time)
+        product_map = loader.load_dim_product(productos_trans, category_map)
+        order_map = loader.load_dim_order(ordenes_trans)
 
-        # Cargar categorias y obtener mapeo
-        try:
-            category_map = loader.load_dim_category(categorias)
-        except Exception as e:
-            logger.warning(f"Error cargando categorias: {e}")
-            category_map = {}
+        logger.info("\nLoading fact table...")
+        fact_count = loader.load_fact_sales(fact_sales, product_map, time_map, order_map, channel_map, customer_map)
 
-        # Cargar canales y obtener mapeo
-        try:
-            channel_map = loader.load_dim_channel(canales)
-        except Exception as e:
-            logger.warning(f"Error cargando canales: {e}")
-            channel_map = {}
+        logger.info("\nLoading staging tables...")
+        loader.load_staging_product_mapping(product_mapping)
+        loader.load_staging_exchange_rates()
 
-        # Cargar clientes y obtener mapeo
-        try:
-            customer_map = loader.load_dim_customer(clientes_trans)
-        except Exception as e:
-            logger.warning(f"Error cargando clientes: {e}")
-            customer_map = {}
-
-        # Cargar tiempo y obtener mapeo
-        try:
-            time_map = loader.load_dim_time(dim_time)
-        except Exception as e:
-            logger.warning(f"Error cargando tiempo: {e}")
-            time_map = {}
-
-        # Cargar productos y obtener mapeo
-        try:
-            product_map = loader.load_dim_product(productos_trans, category_map)
-        except Exception as e:
-            logger.warning(f"Error cargando productos: {e}")
-            product_map = {}
-
-        # Cargar DimOrder y obtener mapeo
-        logger.info("\n[Cargando DimOrder]")
-        try:
-            order_map = loader.load_dim_order(ordenes_trans)
-        except Exception as e:
-            logger.warning(f"Error cargando ordenes: {e}")
-            order_map = {}
-
-        # Construir y cargar FactSales
-        logger.info("\n[Construyendo FactSales]")
-        fact_sales_count = 0
-        try:
-            fact_sales = transformer.build_fact_sales(
-                detalle_trans,
-                ordenes_trans,
-                productos_trans,
-                clientes_trans,
-                DatabaseConfig.get_dw_connection_string(),
-                order_map
-            )
-            # Pasar los mapeos de IDs a load_fact_sales
-            fact_sales_count = loader.load_fact_sales(fact_sales, product_map, time_map, order_map, channel_map, customer_map)
-        except Exception as e:
-            logger.warning(f"Error cargando FactSales: {e}")
-
-        # Cargar tablas de staging (5 reglas)
-        logger.info("\n[Cargando Tablas de Staging - 5 Reglas]")
-
-        # REGLA 1: Cargar tabla puente de mapeo
-        try:
-            logger.info("  REGLA 1: Homologacion de productos (tabla puente)")
-            loader.load_staging_product_mapping(product_mapping)
-        except Exception as e:
-            logger.warning(f"  Error en REGLA 1: {e}")
-
-        # REGLA 2: Cargar tipos de cambio
-        try:
-            logger.info("  REGLA 2: Normalizacion de moneda (tipos de cambio)")
-            loader.load_staging_exchange_rates()
-        except Exception as e:
-            logger.warning(f"  Error en REGLA 2: {e}")
-
-        # Consideracion 5: Cargar trazabilidad
-        try:
-            logger.info("  Consideracion 5: Trazabilidad (source_tracking)")
-            loader.load_source_tracking('DimCustomer', clientes_trans)
-            loader.load_source_tracking('DimProduct', productos_trans)
-        except Exception as e:
-            logger.warning(f"  Error en trazabilidad: {e}")
-
+        # ====================================================================
+        # PHASE 6: SUMMARY
+        # ====================================================================
         logger.info("\n" + "=" * 80)
-        logger.info("[OK] PROCESO ETL COMPLETADO EXITOSAMENTE")
+        logger.info("ETL PIPELINE COMPLETED SUCCESSFULLY")
         logger.info("=" * 80)
-        logger.info("\n[RESUMEN DE CARGAS]")
-        logger.info(f"  [OK] Clientes: {len(clientes_trans)}")
-        logger.info(f"  [OK] Productos: {len(productos_trans)}")
-        logger.info(f"  [OK] Ordenes: {len(ordenes_trans)}")
-        logger.info(f"  [OK] FactSales: {fact_sales_count}")
-        logger.info(f"  [OK] Mapeos (REGLA 1): {len(product_mapping)}")
-        logger.info("\n[REGLAS APLICADAS]")
-        logger.info("  [OK] REGLA 1: Homologacion de productos (codigo_alt - tabla puente)")
-        logger.info("  [OK] REGLA 2: Normalizacion de moneda (CRC -> USD con tasa por defecto)")
-        logger.info("  [OK] REGLA 3: Estandarizacion de genero (M/F/X -> Masculino/Femenino/No especificado)")
-        logger.info("  [OK] REGLA 4: Conversion de fechas (VARCHAR -> DATE/DATETIME)")
-        logger.info("  [OK] REGLA 5: Transformacion de totales (string con comas/puntos -> DECIMAL)")
+
+        logger.info("\nLoad Summary:")
+        logger.info(f"  Customers: {len(customer_map)} loaded")
+        logger.info(f"  Products: {len(product_map)} loaded")
+        logger.info(f"  Orders: {len(order_map)} loaded")
+        logger.info(f"  Fact Sales: {fact_count} rows loaded")
+        logger.info(f"  Categories: {len(category_map)} loaded")
+        logger.info(f"  Channels: {len(channel_map)} loaded")
+
+        logger.info("\nIntegration Rules Applied:")
+        logger.info("  Rule 1: Product homologation (codigo_alt -> SKU mapping table)")
+        logger.info("  Rule 2: Currency normalization (CRC -> USD with exchange rates)")
+        logger.info("  Rule 3: Gender standardization (M/F/X -> Male/Female/Unspecified)")
+        logger.info("  Rule 4: Date conversion (VARCHAR -> DATE/DATETIME)")
+        logger.info("  Rule 5: Amount transformation (string with commas/dots -> DECIMAL)")
+
+        logger.info("\nIdempotent Features:")
+        logger.info("  - Dimensions check for existing records before inserting")
+        logger.info("  - Fact table validates foreign keys before loading")
+        logger.info("  - Missing references are logged and skipped")
+        logger.info("  - Can be safely re-run without duplicating data")
+
         logger.info("=" * 80)
+
+        if exchange_helper:
+            exchange_helper.cerrar()
 
         return True
 
     except Exception as e:
-        logger.error(f"\n[ERROR] ERROR EN PROCESO ETL: {str(e)}")
-        logger.exception("Traceback completo:")
+        logger.error(f"\nETL FAILED: {str(e)}")
+        logger.exception("Full traceback:")
+        if exchange_helper:
+            exchange_helper.cerrar()
         return False
 
 
