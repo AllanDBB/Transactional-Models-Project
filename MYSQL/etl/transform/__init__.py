@@ -266,6 +266,11 @@ class DataTransformer:
             left_on='orden_id', right_on='id', how='left', suffixes=('', '_orden')
         )
 
+        # Preserve fecha from order
+        if 'fecha_orden' in df.columns:
+            df['fecha'] = df['fecha_orden']
+            df = df.drop(columns=['fecha_orden'])
+
         # Apply Rule 2: Convert prices to USD
         crc_rows = df['moneda'] == 'CRC'
         if crc_rows.any():
@@ -379,7 +384,16 @@ class DataTransformer:
             df_ordenes[['id', 'cliente_id', 'fecha', 'canal', 'moneda', 'total_usd', 'source_key']],
             left_on='orden_id', right_on='id', how='inner', suffixes=('_detalle', '_orden')
         )
-        fact.rename(columns={'source_key_orden': 'orden_source_key', 'source_key_detalle': 'detalle_source_key'}, inplace=True)
+        fact.rename(columns={
+            'source_key_orden': 'orden_source_key',
+            'source_key_detalle': 'detalle_source_key',
+            'moneda_orden': 'moneda'
+        }, inplace=True)
+
+        # Use fecha from order (df_detalle should already have it from transform_orden_detalle)
+        if 'fecha_orden' in fact.columns:
+            fact['fecha'] = fact['fecha_orden']
+            fact = fact.drop(columns=['fecha_orden'])
 
         # Join with products
         fact = fact.merge(

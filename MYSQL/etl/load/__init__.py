@@ -322,6 +322,8 @@ class DataLoader:
         missing_product = 0
         missing_customer = 0
         missing_order = 0
+        crc_with_dw_rate = 0
+        crc_with_default_rate = 0
 
         with self._get_connection() as conn:
             for idx, row in df_fact.iterrows():
@@ -368,12 +370,15 @@ class DataLoader:
                         if fecha_for_rate:
                             rate_result = conn.execute(
                                 """SELECT id FROM DimExchangeRate
-                                   WHERE fromCurrency = ? AND toCurrency = ? AND CAST(effectiveDate AS DATE) <= ?
-                                   ORDER BY effectiveDate DESC""",
+                                   WHERE fromCurrency = ? AND toCurrency = ? AND date <= ?
+                                   ORDER BY date DESC""",
                                 'CRC', 'USD', fecha_for_rate
                             ).fetchone()
                             if rate_result:
                                 exchange_rate_id = int(rate_result[0])
+                                crc_with_dw_rate += 1
+                            else:
+                                crc_with_default_rate += 1
                     except Exception as e:
                         logger.warning(f"Could not find exchange rate for row {idx}: {e}")
 
@@ -405,6 +410,14 @@ class DataLoader:
             logger.warning(f"  - {missing_customer} rows missing customer references")
         if missing_order > 0:
             logger.warning(f"  - {missing_order} rows missing order references")
+
+        # Report exchange rate usage
+        if crc_with_dw_rate > 0 or crc_with_default_rate > 0:
+            logger.info(f"\nExchange Rate Summary (CRC->USD):")
+            if crc_with_dw_rate > 0:
+                logger.info(f"  - {crc_with_dw_rate} rows: Used DWH exchange rates")
+            if crc_with_default_rate > 0:
+                logger.warning(f"  - {crc_with_default_rate} rows: Used default rate (515.0)")
 
         return loaded
 
