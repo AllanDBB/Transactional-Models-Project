@@ -15,6 +15,35 @@ def map_channel_type(canal: str) -> str:
         return 'Partner'
     return 'Other'
 
+def fetch_all_rows(supabase: Client, table_name: str, batch_size: int = 1000):
+    all_rows = []
+    page = 0
+
+    while True:
+        start = page * batch_size
+        end = start + batch_size - 1 
+
+        resp = (
+            supabase
+            .table(table_name)
+            .select("*")
+            .range(start, end)
+            .execute()
+        )
+
+        rows = resp.data or []
+        if not rows:
+            break
+
+        all_rows.extend(rows)
+
+        if len(rows) < batch_size:
+            break
+
+        page += 1
+
+    return all_rows
+
 
 def generate_sku_for_product(cursor, product_row: dict) -> str:
     # Buscar el último servicio ya creado (S + 4 dígitos), ordenado desc
@@ -310,8 +339,7 @@ def run_etl_supabase_to_dw(effective_dates: set[date]):
         # 1. CLIENTES → DimCustomer
         # =========================
         print("Extrayendo clientes de Supabase...")
-        clientes_resp = supabase.table("cliente").select("*").execute()
-        clientes = clientes_resp.data or []
+        clientes = fetch_all_rows(supabase, "cliente")
         print(f"Clientes Supabase (total): {len(clientes)}")
 
         for cli in clientes:
@@ -338,9 +366,9 @@ def run_etl_supabase_to_dw(effective_dates: set[date]):
         # 2. PRODUCTOS → DimCategory + DimProduct
         # =========================
         print("Extrayendo productos de Supabase...")
-        productos_resp = supabase.table("producto").select("*").execute()
-        productos = productos_resp.data or []
+        productos = fetch_all_rows(supabase, "producto")
         print(f"Productos Supabase (total): {len(productos)}")
+
 
         for prod in productos:
             producto_uuid = prod["producto_id"]
@@ -371,9 +399,9 @@ def run_etl_supabase_to_dw(effective_dates: set[date]):
         # 3. ÓRDENES → DimOrder (+ DimTime, DimChannel, DimExchangeRate)
         # =========================
         print("Extrayendo órdenes de Supabase...")
-        ordenes_resp = supabase.table("orden").select("*").execute()
-        ordenes = ordenes_resp.data or []
+        ordenes = fetch_all_rows(supabase, "orden")
         print(f"Órdenes Supabase (total): {len(ordenes)}")
+
 
         for ord_row in ordenes:
             orden_uuid = ord_row["orden_id"]
@@ -469,9 +497,9 @@ def run_etl_supabase_to_dw(effective_dates: set[date]):
         # 4. DETALLES → FactSales
         # =========================
         print("Extrayendo detalles de órdenes de Supabase...")
-        detalles_resp = supabase.table("orden_detalle").select("*").execute()
-        detalles = detalles_resp.data or []
+        detalles = fetch_all_rows(supabase, "orden_detalle")
         print(f"Detalles Supabase (total): {len(detalles)}")
+
 
         for det in detalles:
             orden_uuid = det["orden_id"]
