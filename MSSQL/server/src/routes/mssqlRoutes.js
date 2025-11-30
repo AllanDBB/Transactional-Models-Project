@@ -5,9 +5,9 @@ const sql = require('mssql');
 // Configuración de conexión
 const config = {
     user: process.env.MSSQL_USER || 'sa',
-    password: process.env.MSSQL_PASSWORD || 'SaPassword123!',
+    password: process.env.MSSQL_PASSWORD || 'BasesDatos2!',
     server: process.env.MSSQL_SERVER || 'localhost',
-    port: parseInt(process.env.MSSQL_PORT || '1433'),
+    port: parseInt(process.env.MSSQL_PORT || '1435'),
     database: process.env.MSSQL_DATABASE || 'SalesDB_MSSQL',
     options: {
         encrypt: false,
