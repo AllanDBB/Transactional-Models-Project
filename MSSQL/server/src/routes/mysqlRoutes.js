@@ -103,6 +103,22 @@ router.post('/clean', async (req, res) => {
 router.post('/generate-data', async (req, res) => {
     try {
         console.log('Generando datos de prueba MySQL...');
+
+        // Verificar que las tablas existan antes de generar datos
+        const checkTablesQuery = `
+            SELECT COUNT(*) as count FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = '${config.database}'
+            AND TABLE_NAME IN ('Cliente', 'Producto', 'Orden', 'OrdenDetalle')
+        `;
+        const tables = await executeQuery(checkTablesQuery);
+
+        if (tables[0].count !== 4) {
+            return res.status(400).json({
+                success: false,
+                error: 'El schema no está inicializado. Por favor, haz clic en "Inicializar Schema" primero.'
+            });
+        }
+
         await executeStoredProcedure('sp_generar_datos');
         res.json({
             success: true,
@@ -138,6 +154,35 @@ router.get('/stats', async (req, res) => {
         }
 
         res.json(results);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// GET /api/mysql/query/:table - Obtener datos de una tabla (primeros 100 registros)
+router.get('/query/:table', async (req, res) => {
+    try {
+        const tableName = req.params.table;
+        const allowedTables = ['Cliente', 'Producto', 'Orden', 'OrdenDetalle'];
+
+        if (!allowedTables.includes(tableName)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tabla no permitida'
+            });
+        }
+
+        const query = `SELECT * FROM ${tableName} ORDER BY id DESC LIMIT 100`;
+        const rows = await executeQuery(query);
+
+        res.json({
+            success: true,
+            table: tableName,
+            data: rows
+        });
     } catch (error) {
         res.status(500).json({
             success: false,

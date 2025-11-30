@@ -78,7 +78,7 @@ document.getElementById('btn-init-schema').addEventListener('click', async () =>
 document.getElementById('btn-drop-schema').addEventListener('click', async () => {
     if (isLoading) return;
 
-    if (!confirm('⚠️ ADVERTENCIA: ¿Está COMPLETAMENTE SEGURO de eliminar el schema MSSQL?\n\nEsto eliminará TODAS las tablas y su estructura.\n\nEsta acción NO se puede deshacer.')) {
+    if (!confirm('ADVERTENCIA: ¿Está completamente seguro de eliminar el schema MSSQL?\n\nEsto eliminará TODAS las tablas y su estructura.\n\nEsta acción NO se puede deshacer.')) {
         return;
     }
 
@@ -131,17 +131,17 @@ document.getElementById('btn-clean-db').addEventListener('click', async () => {
 document.getElementById('btn-generate-data').addEventListener('click', async () => {
     if (isLoading) return;
 
-    if (!confirm('¿Generar datos de prueba en MSSQL? (600 clientes, 5000 productos, 5000 órdenes, 17500 detalles)')) {
+    if (!confirm('¿Generar datos de prueba en MSSQL? Este proceso puede tardar varios minutos.')) {
         return;
     }
 
     isLoading = true;
     setButtonLoading('btn-generate-data', true);
-    showStatus('status-generate-data', 'Generando datos... Este proceso puede tardar algunos segundos', 'info');
+    showStatus('status-generate-data', 'Generando datos... Por favor espera', 'info');
 
     try {
         const result = await apiCall('/mssql/generate-data', 'POST');
-        showStatus('status-generate-data', result.message || 'Datos MSSQL generados exitosamente', 'success');
+        showStatus('status-generate-data', 'Datos generados correctamente', 'success');
         await refreshStats();
     } catch (error) {
         showStatus('status-generate-data', `Error: ${error.message}`, 'error');
@@ -204,7 +204,7 @@ document.getElementById('btn-init-schema-mysql').addEventListener('click', async
 document.getElementById('btn-drop-schema-mysql').addEventListener('click', async () => {
     if (isLoading) return;
 
-    if (!confirm('⚠️ ADVERTENCIA: ¿Está COMPLETAMENTE SEGURO de eliminar el schema MySQL?\n\nEsto eliminará TODAS las tablas y su estructura.\n\nEsta acción NO se puede deshacer.')) {
+    if (!confirm('ADVERTENCIA: ¿Está completamente seguro de eliminar el schema MySQL?\n\nEsto eliminará TODAS las tablas y su estructura.\n\nEsta acción NO se puede deshacer.')) {
         return;
     }
 
@@ -257,17 +257,17 @@ document.getElementById('btn-clean-db-mysql').addEventListener('click', async ()
 document.getElementById('btn-generate-data-mysql').addEventListener('click', async () => {
     if (isLoading) return;
 
-    if (!confirm('¿Generar datos de prueba en MySQL? (600 clientes, 5000 productos, 5000 órdenes, 17500 detalles)')) {
+    if (!confirm('¿Generar datos de prueba en MySQL? Este proceso puede tardar varios minutos.')) {
         return;
     }
 
     isLoading = true;
     setButtonLoading('btn-generate-data-mysql', true);
-    showStatus('status-generate-data-mysql', 'Generando datos... Este proceso puede tardar algunos segundos', 'info');
+    showStatus('status-generate-data-mysql', 'Generando datos... Por favor espera', 'info');
 
     try {
         const result = await apiCall('/mysql/generate-data', 'POST');
-        showStatus('status-generate-data-mysql', result.message || 'Datos MySQL generados exitosamente', 'success');
+        showStatus('status-generate-data-mysql', 'Datos generados correctamente', 'success');
         await refreshStatsMySQL();
     } catch (error) {
         showStatus('status-generate-data-mysql', `Error: ${error.message}`, 'error');
@@ -298,6 +298,59 @@ async function refreshStatsMySQL() {
 }
 
 document.getElementById('btn-refresh-stats-mysql').addEventListener('click', refreshStatsMySQL);
+
+// ======================================
+// QUERY RESULTS
+// ======================================
+
+function renderTable(data, containerId) {
+    const container = document.getElementById(containerId);
+
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p class="no-data">Sin datos disponibles</p>';
+        return;
+    }
+
+    const keys = Object.keys(data[0]);
+    let html = '<table><thead><tr>';
+
+    keys.forEach(key => {
+        html += `<th>${key}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    data.forEach(row => {
+        html += '<tr>';
+        keys.forEach(key => {
+            const value = row[key] !== null ? row[key] : '-';
+            html += `<td>${value}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+document.querySelectorAll('.query-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const table = this.getAttribute('data-table');
+        const db = this.getAttribute('data-db') || 'mssql';
+        const containerId = db === 'mysql' ? 'query-results-mysql' : 'query-results';
+
+        const container = this.closest('.query-buttons');
+        container.querySelectorAll('.query-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+
+        try {
+            const response = await apiCall(`/${db}/query/${table}`);
+            renderTable(response.data, containerId);
+        } catch (error) {
+            document.getElementById(containerId).innerHTML =
+                `<p class="no-data">Error: ${error.message}</p>`;
+        }
+    });
+});
 
 // ======================================
 // INICIALIZACIÓN

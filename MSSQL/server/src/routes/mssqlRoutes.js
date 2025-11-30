@@ -135,7 +135,7 @@ router.get('/stats', async (req, res) => {
         };
 
         const results = {};
-        
+
         for (const [key, query] of Object.entries(queries)) {
             try {
                 const result = await executeQuery(query);
@@ -146,6 +146,35 @@ router.get('/stats', async (req, res) => {
         }
 
         res.json(results);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// GET /api/mssql/query/:table - Obtener datos de una tabla (primeros 100 registros)
+router.get('/query/:table', async (req, res) => {
+    try {
+        const tableName = req.params.table;
+        const allowedTables = ['Cliente', 'Producto', 'Orden', 'OrdenDetalle'];
+
+        if (!allowedTables.includes(tableName)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tabla no permitida'
+            });
+        }
+
+        const query = `SELECT TOP 100 * FROM sales_ms.${tableName} ORDER BY id DESC`;
+        const result = await executeQuery(query);
+
+        res.json({
+            success: true,
+            table: tableName,
+            data: result.recordset
+        });
     } catch (error) {
         res.status(500).json({
             success: false,

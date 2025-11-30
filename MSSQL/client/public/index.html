@@ -75,12 +75,9 @@
 
                     <!-- Generar Datos de Prueba MSSQL -->
                     <div class="action-card">
-                        <div class="action-header">
-                            <span class="icon">⚡</span>
-                            <h3>Generar Datos</h3>
-                        </div>
+                        <h3>Generar Datos</h3>
                         <p class="action-description">
-                            Genera datos de prueba: 600 clientes, 5,000 productos, 5,000 órdenes y 17,500 detalles
+                            Carga datos de prueba en las tablas
                         </p>
                         <button id="btn-generate-data" class="action-button success">
                             <span class="button-text">Generar Datos</span>
@@ -89,35 +86,51 @@
                         <div id="status-generate-data" class="status-message"></div>
                     </div>
 
-                    <!-- Verificar Estado MSSQL -->
-                    <div class="action-card">
-                        <div class="action-header">
-                            <span class="icon">📊</span>
+                    <!-- Verificar Estado y Consultas MSSQL -->
+                    <div class="stats-query-wrapper">
+                        <!-- Estado Actual -->
+                        <div class="action-card">
                             <h3>Estado Actual</h3>
+                            <div id="db-stats" class="stats-container">
+                                <div class="stat-item">
+                                    <span class="stat-label">Clientes:</span>
+                                    <span id="stat-clientes" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Productos:</span>
+                                    <span id="stat-productos" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Órdenes:</span>
+                                    <span id="stat-ordenes" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Detalles:</span>
+                                    <span id="stat-detalles" class="stat-value">-</span>
+                                </div>
+                            </div>
+                            <button id="btn-refresh-stats" class="action-button secondary">
+                                <span class="button-text">Actualizar Estado</span>
+                                <span class="spinner" style="display: none;"></span>
+                            </button>
+                            <div id="status-refresh-stats" class="status-message"></div>
                         </div>
-                        <div id="db-stats" class="stats-container">
-                            <div class="stat-item">
-                                <span class="stat-label">Clientes:</span>
-                                <span id="stat-clientes" class="stat-value">-</span>
+
+                        <!-- Consultas de Tablas -->
+                        <div class="action-card query-card">
+                            <h3>Consultas</h3>
+                            <div class="query-buttons">
+                                <button class="query-btn" data-table="Cliente">Clientes</button>
+                                <button class="query-btn" data-table="Producto">Productos</button>
+                                <button class="query-btn" data-table="Orden">Órdenes</button>
+                                <button class="query-btn" data-table="OrdenDetalle">Detalles</button>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Productos:</span>
-                                <span id="stat-productos" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Órdenes:</span>
-                                <span id="stat-ordenes" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Detalles:</span>
-                                <span id="stat-detalles" class="stat-value">-</span>
+                            <div class="query-results-container">
+                                <div id="query-results" class="query-results">
+                                    <p class="no-data">Selecciona una tabla</p>
+                                </div>
                             </div>
                         </div>
-                        <button id="btn-refresh-stats" class="action-button secondary">
-                            <span class="button-text">Actualizar Estado</span>
-                            <span class="spinner" style="display: none;">⏳</span>
-                        </button>
-                        <div id="status-refresh-stats" class="status-message"></div>
                     </div>
                 </div>
             </section>
@@ -180,12 +193,9 @@
 
                     <!-- Generar Datos de Prueba MySQL -->
                     <div class="action-card">
-                        <div class="action-header">
-                            <span class="icon">⚡</span>
-                            <h3>Generar Datos</h3>
-                        </div>
+                        <h3>Generar Datos</h3>
                         <p class="action-description">
-                            Genera datos de prueba: 600 clientes, 5,000 productos, 5,000 órdenes y 17,500 detalles
+                            Carga datos de prueba en las tablas
                         </p>
                         <button id="btn-generate-data-mysql" class="action-button success">
                             <span class="button-text">Generar Datos</span>
@@ -194,35 +204,51 @@
                         <div id="status-generate-data-mysql" class="status-message"></div>
                     </div>
 
-                    <!-- Verificar Estado MySQL -->
-                    <div class="action-card">
-                        <div class="action-header">
-                            <span class="icon">📊</span>
+                    <!-- Verificar Estado y Consultas MySQL -->
+                    <div class="stats-query-wrapper">
+                        <!-- Estado Actual -->
+                        <div class="action-card">
                             <h3>Estado Actual</h3>
+                            <div id="db-stats-mysql" class="stats-container">
+                                <div class="stat-item">
+                                    <span class="stat-label">Clientes:</span>
+                                    <span id="stat-clientes-mysql" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Productos:</span>
+                                    <span id="stat-productos-mysql" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Órdenes:</span>
+                                    <span id="stat-ordenes-mysql" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Detalles:</span>
+                                    <span id="stat-detalles-mysql" class="stat-value">-</span>
+                                </div>
+                            </div>
+                            <button id="btn-refresh-stats-mysql" class="action-button secondary">
+                                <span class="button-text">Actualizar Estado</span>
+                                <span class="spinner" style="display: none;"></span>
+                            </button>
+                            <div id="status-refresh-stats-mysql" class="status-message"></div>
                         </div>
-                        <div id="db-stats-mysql" class="stats-container">
-                            <div class="stat-item">
-                                <span class="stat-label">Clientes:</span>
-                                <span id="stat-clientes-mysql" class="stat-value">-</span>
+
+                        <!-- Consultas de Tablas -->
+                        <div class="action-card query-card">
+                            <h3>Consultas</h3>
+                            <div class="query-buttons">
+                                <button class="query-btn" data-table="Cliente" data-db="mysql">Clientes</button>
+                                <button class="query-btn" data-table="Producto" data-db="mysql">Productos</button>
+                                <button class="query-btn" data-table="Orden" data-db="mysql">Órdenes</button>
+                                <button class="query-btn" data-table="OrdenDetalle" data-db="mysql">Detalles</button>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Productos:</span>
-                                <span id="stat-productos-mysql" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Órdenes:</span>
-                                <span id="stat-ordenes-mysql" class="stat-value">-</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Detalles:</span>
-                                <span id="stat-detalles-mysql" class="stat-value">-</span>
+                            <div class="query-results-container">
+                                <div id="query-results-mysql" class="query-results">
+                                    <p class="no-data">Selecciona una tabla</p>
+                                </div>
                             </div>
                         </div>
-                        <button id="btn-refresh-stats-mysql" class="action-button secondary">
-                            <span class="button-text">Actualizar Estado</span>
-                            <span class="spinner" style="display: none;">⏳</span>
-                        </button>
-                        <div id="status-refresh-stats-mysql" class="status-message"></div>
                     </div>
                 </div>
             </section>
