@@ -23,84 +23,84 @@ BEGIN
         PRINT '========================================';
         
         -- Eliminar tablas de hechos
-        IF OBJECT_ID('FactTargetSales', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.FactTargetSales', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE FactTargetSales;
+            DROP TABLE dwh.FactTargetSales;
             PRINT '[OK] FactTargetSales eliminada';
         END
         
-        IF OBJECT_ID('MetasVentas', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.MetasVentas', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE MetasVentas;
+            DROP TABLE dwh.MetasVentas;
             PRINT '[OK] MetasVentas eliminada';
         END
         
-        IF OBJECT_ID('FactSales', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.FactSales', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE FactSales;
+            DROP TABLE dwh.FactSales;
             PRINT '[OK] FactSales eliminada';
         END
         
         -- Eliminar dimensiones
-        IF OBJECT_ID('DimOrder', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimOrder', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimOrder;
+            DROP TABLE dwh.DimOrder;
             PRINT '[OK] DimOrder eliminada';
         END
         
-        IF OBJECT_ID('DimProduct', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimProduct', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimProduct;
+            DROP TABLE dwh.DimProduct;
             PRINT '[OK] DimProduct eliminada';
         END
         
-        IF OBJECT_ID('DimCustomer', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimCustomer', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimCustomer;
+            DROP TABLE dwh.DimCustomer;
             PRINT '[OK] DimCustomer eliminada';
         END
         
-        IF OBJECT_ID('DimChannel', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimChannel', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimChannel;
+            DROP TABLE dwh.DimChannel;
             PRINT '[OK] DimChannel eliminada';
         END
         
-        IF OBJECT_ID('DimCategory', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimCategory', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimCategory;
+            DROP TABLE dwh.DimCategory;
             PRINT '[OK] DimCategory eliminada';
         END
         
-        IF OBJECT_ID('DimTime', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimTime', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimTime;
+            DROP TABLE dwh.DimTime;
             PRINT '[OK] DimTime eliminada';
         END
         
-        IF OBJECT_ID('DimExchangeRate', 'U') IS NOT NULL
+        IF OBJECT_ID('dwh.DimExchangeRate', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE DimExchangeRate;
+            DROP TABLE dwh.DimExchangeRate;
             PRINT '[OK] DimExchangeRate eliminada';
         END
         
         -- Eliminar tablas de staging
-        IF OBJECT_ID('staging_source_tracking', 'U') IS NOT NULL
+        IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE staging_source_tracking;
-            PRINT '[OK] staging_source_tracking eliminada';
+            DROP TABLE staging.source_tracking;
+            PRINT '[OK] staging.source_tracking eliminada';
         END
         
-        IF OBJECT_ID('staging_tipo_cambio', 'U') IS NOT NULL
+        IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE staging_tipo_cambio;
-            PRINT '[OK] staging_tipo_cambio eliminada';
+            DROP TABLE staging.tipo_cambio;
+            PRINT '[OK] staging.tipo_cambio eliminada';
         END
         
-        IF OBJECT_ID('staging_map_producto', 'U') IS NOT NULL
+        IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL
         BEGIN
-            DROP TABLE staging_map_producto;
-            PRINT '[OK] staging_map_producto eliminada';
+            DROP TABLE staging.map_producto;
+            PRINT '[OK] staging.map_producto eliminada';
         END
         
         PRINT '';

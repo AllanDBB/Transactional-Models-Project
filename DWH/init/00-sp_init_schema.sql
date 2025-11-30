@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 00-sp_init_schema.sql
--- Stored Procedure para inicializar schema completo del DWH
+-- Stored Procedure para inicializar schema completo del DWH con separación real
 -- ============================================================================
 
 -- Crear base de datos si no existe
@@ -11,40 +11,62 @@ GO
 USE MSSQL_DW;
 GO
 
+-- ============================================================================
+-- Crear Schemas Lógicos
+-- ============================================================================
+
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'staging')
+    EXEC('CREATE SCHEMA staging');
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dwh')
+    EXEC('CREATE SCHEMA dwh');
+GO
+
 -- Eliminar procedimiento si existe
 IF OBJECT_ID('dbo.sp_init_schema', 'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_init_schema;
 GO
 
+-- ============================================================================
 -- Crear procedimiento
+-- ============================================================================
 CREATE PROCEDURE dbo.sp_init_schema
 AS
 BEGIN
     SET NOCOUNT ON;
-    
+
     BEGIN TRY
-        
-        -- Eliminar tablas existentes (en orden por FKs)
-        IF OBJECT_ID('FactTargetSales', 'U') IS NOT NULL DROP TABLE FactTargetSales;
-        IF OBJECT_ID('MetasVentas', 'U') IS NOT NULL DROP TABLE MetasVentas;
-        IF OBJECT_ID('FactSales', 'U') IS NOT NULL DROP TABLE FactSales;
-        IF OBJECT_ID('DimOrder', 'U') IS NOT NULL DROP TABLE DimOrder;
-        IF OBJECT_ID('DimProduct', 'U') IS NOT NULL DROP TABLE DimProduct;
-        IF OBJECT_ID('DimCustomer', 'U') IS NOT NULL DROP TABLE DimCustomer;
-        IF OBJECT_ID('DimChannel', 'U') IS NOT NULL DROP TABLE DimChannel;
-        IF OBJECT_ID('DimCategory', 'U') IS NOT NULL DROP TABLE DimCategory;
-        IF OBJECT_ID('DimTime', 'U') IS NOT NULL DROP TABLE DimTime;
-        IF OBJECT_ID('DimExchangeRate', 'U') IS NOT NULL DROP TABLE DimExchangeRate;
-        IF OBJECT_ID('staging_source_tracking', 'U') IS NOT NULL DROP TABLE staging_source_tracking;
-        IF OBJECT_ID('staging_tipo_cambio', 'U') IS NOT NULL DROP TABLE staging_tipo_cambio;
-        IF OBJECT_ID('staging_map_producto', 'U') IS NOT NULL DROP TABLE staging_map_producto;
-        
-        
-        -- ================================================================
-        -- STAGING TABLES
-        -- ================================================================
-        
-        CREATE TABLE staging_map_producto (
+
+        -----------------------------------------------------------------------
+        -- ELIMINAR TABLAS EN ORDEN CORRECTO (FACT → DIM → STAGING)
+        -----------------------------------------------------------------------
+
+        -- FACTS
+        IF OBJECT_ID('dwh.FactTargetSales', 'U') IS NOT NULL DROP TABLE dwh.FactTargetSales;
+        IF OBJECT_ID('dwh.MetasVentas', 'U') IS NOT NULL DROP TABLE dwh.MetasVentas;
+        IF OBJECT_ID('dwh.FactSales', 'U') IS NOT NULL DROP TABLE dwh.FactSales;
+
+        -- DIMENSIONS
+        IF OBJECT_ID('dwh.DimOrder', 'U') IS NOT NULL DROP TABLE dwh.DimOrder;
+        IF OBJECT_ID('dwh.DimProduct', 'U') IS NOT NULL DROP TABLE dwh.DimProduct;
+        IF OBJECT_ID('dwh.DimCustomer', 'U') IS NOT NULL DROP TABLE dwh.DimCustomer;
+        IF OBJECT_ID('dwh.DimChannel', 'U') IS NOT NULL DROP TABLE dwh.DimChannel;
+        IF OBJECT_ID('dwh.DimCategory', 'U') IS NOT NULL DROP TABLE dwh.DimCategory;
+        IF OBJECT_ID('dwh.DimTime', 'U') IS NOT NULL DROP TABLE dwh.DimTime;
+        IF OBJECT_ID('dwh.DimExchangeRate', 'U') IS NOT NULL DROP TABLE dwh.DimExchangeRate;
+
+        -- STAGING
+        IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL DROP TABLE staging.source_tracking;
+        IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL DROP TABLE staging.tipo_cambio;
+        IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL DROP TABLE staging.map_producto;
+
+
+        -----------------------------------------------------------------------
+        -- ============================ STAGING ================================
+        -----------------------------------------------------------------------
+
+        CREATE TABLE staging.map_producto (
             map_id INT IDENTITY(1,1) PRIMARY KEY,
             source_system NVARCHAR(50) NOT NULL,
             source_code NVARCHAR(100) NOT NULL,
@@ -55,10 +77,9 @@ BEGIN
             activo BIT DEFAULT 1,
             CONSTRAINT unique_map UNIQUE (source_system, source_code)
         );
-        CREATE INDEX idx_sku ON staging_map_producto(sku_oficial);
-        CREATE INDEX idx_source ON staging_map_producto(source_system, source_code);
-        
-        CREATE TABLE staging_tipo_cambio (
+        CREATE INDEX idx_stg_sku ON staging.map_producto(sku_oficial);
+
+        CREATE TABLE staging.tipo_cambio (
             cambio_id INT IDENTITY(1,1) PRIMARY KEY,
             fecha DATE NOT NULL,
             de_moneda CHAR(3) NOT NULL,
@@ -70,10 +91,9 @@ BEGIN
             CONSTRAINT chk_monedas CHECK (a_moneda = 'USD'),
             CONSTRAINT unique_cambio UNIQUE (fecha, de_moneda, a_moneda)
         );
-        CREATE INDEX idx_fecha_cambio ON staging_tipo_cambio(fecha, de_moneda);
-        CREATE INDEX idx_moneda ON staging_tipo_cambio(de_moneda, a_moneda);
-        
-        CREATE TABLE staging_source_tracking (
+        CREATE INDEX idx_stg_fecha_cambio ON staging.tipo_cambio(fecha);
+
+        CREATE TABLE staging.source_tracking (
             tracking_id INT IDENTITY(1,1) PRIMARY KEY,
             source_system NVARCHAR(50) NOT NULL,
             source_key NVARCHAR(100) NOT NULL,
@@ -84,39 +104,37 @@ BEGIN
             estado NVARCHAR(20) DEFAULT 'ACTIVO',
             CONSTRAINT unique_source_key UNIQUE (source_system, source_key, tabla_destino)
         );
-        CREATE INDEX idx_source_tracking ON staging_source_tracking(source_system, source_key);
-        
-        -- ================================================================
-        -- DIMENSION TABLES
-        -- ================================================================
-        
-        CREATE TABLE DimTime (
+        CREATE INDEX idx_stg_source_tracking ON staging.source_tracking(source_system, source_key);
+
+
+        -----------------------------------------------------------------------
+        -- ============================ DIMENSIONS =============================
+        -----------------------------------------------------------------------
+
+        CREATE TABLE dwh.DimTime (
             id INT IDENTITY(1,1) PRIMARY KEY,
             year INT NOT NULL,
             month INT NOT NULL,
             day INT NOT NULL,
             date DATE NOT NULL UNIQUE,
             CONSTRAINT chk_month CHECK (month BETWEEN 1 AND 12),
-            CONSTRAINT chk_day CHECK (day BETWEEN 1 AND 31),
+            CONSTRAINT chk_day CHECK (day BETWEEN 1 AND 31)
         );
-        CREATE INDEX idx_dimtime_date ON DimTime(date);
-        
-        CREATE TABLE DimCategory (
+
+        CREATE TABLE dwh.DimCategory (
             id INT IDENTITY(1,1) PRIMARY KEY,
             name VARCHAR(100) NOT NULL UNIQUE
         );
-        CREATE INDEX idx_dimcategory_name ON DimCategory(name);
-        
-        CREATE TABLE DimProduct (
+
+        CREATE TABLE dwh.DimProduct (
             id INT IDENTITY(1,1) PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
             code VARCHAR(50) NOT NULL UNIQUE,
             categoryId INT,
-            CONSTRAINT fk_product_category FOREIGN KEY (categoryId) REFERENCES DimCategory(id)
+            FOREIGN KEY (categoryId) REFERENCES dwh.DimCategory(id)
         );
-        CREATE INDEX idx_dimproduct_code ON DimProduct(code);
-        
-        CREATE TABLE DimCustomer (
+
+        CREATE TABLE dwh.DimCustomer (
             id INT IDENTITY(1,1) PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             email VARCHAR(150) NOT NULL UNIQUE,
@@ -126,38 +144,36 @@ BEGIN
             CONSTRAINT chk_email_format CHECK (email LIKE '%@%'),
             CONSTRAINT chk_gender CHECK (gender IN ('M', 'F', 'O'))
         );
-        CREATE INDEX idx_dimcustomer_email ON DimCustomer(email);
-        
-        CREATE TABLE DimChannel (
+
+        CREATE TABLE dwh.DimChannel (
             id INT IDENTITY(1,1) PRIMARY KEY,
-            name VARCHAR(50) NULL,
+            name VARCHAR(50),
             channelType VARCHAR(50),
             CONSTRAINT chk_channel_type CHECK (channelType IN ('Website', 'Store', 'App', 'Partner', 'Other'))
         );
-        
-        CREATE TABLE DimOrder (
+
+        CREATE TABLE dwh.DimOrder (
             id INT IDENTITY(1,1) PRIMARY KEY,
             totalOrderUSD DECIMAL(10,2) NOT NULL,
             CONSTRAINT chk_total_order CHECK (totalOrderUSD >= 0)
         );
-        
-        CREATE TABLE DimExchangeRate (
+
+        CREATE TABLE dwh.DimExchangeRate (
             id INT IDENTITY(1,1) PRIMARY KEY,
             toCurrency VARCHAR(3) NOT NULL,
             fromCurrency VARCHAR(3) NOT NULL,
             date DATE NOT NULL,
             rate DECIMAL(18,6) NOT NULL,
-            CONSTRAINT chk_currencies CHECK (toCurrency IN ('USD')),
-            CONSTRAINT chk_from_currencies CHECK (fromCurrency IN ('CRC')),
             CONSTRAINT chk_rate_positive CHECK (rate > 0),
             CONSTRAINT unique_exchange_rate UNIQUE (fromCurrency, toCurrency, date)
         );
-        
-        -- ================================================================
-        -- FACT TABLES
-        -- ================================================================
-        
-        CREATE TABLE FactSales (
+
+
+        -----------------------------------------------------------------------
+        -- ================================ FACTS ===============================
+        -----------------------------------------------------------------------
+
+        CREATE TABLE dwh.FactSales (
             id INT IDENTITY(1,1) PRIMARY KEY,
             productId INT NOT NULL,
             timeId INT NOT NULL,
@@ -170,85 +186,65 @@ BEGIN
             discountPercentage DECIMAL(5,2) DEFAULT 0,
             created_at DATETIME DEFAULT GETDATE(),
             exchangeRateId INT NULL,
-            CONSTRAINT chk_product_cant CHECK (productCant > 0),
-            CONSTRAINT chk_unit_price CHECK (productUnitPriceUSD >= 0),
-            CONSTRAINT chk_line_total CHECK (lineTotalUSD >= 0),
-            CONSTRAINT chk_discount CHECK (discountPercentage BETWEEN 0 AND 100),
-            CONSTRAINT fk_sales_product FOREIGN KEY (productId) REFERENCES DimProduct(id),
-            CONSTRAINT fk_sales_time FOREIGN KEY (timeId) REFERENCES DimTime(id),
-            CONSTRAINT fk_sales_order FOREIGN KEY (orderId) REFERENCES DimOrder(id),
-            CONSTRAINT fk_sales_channel FOREIGN KEY (channelId) REFERENCES DimChannel(id),
-            CONSTRAINT fk_sales_customer FOREIGN KEY (customerId) REFERENCES DimCustomer(id),
-            CONSTRAINT fk_sales_exchange_rate FOREIGN KEY (exchangeRateId) REFERENCES DimExchangeRate(id)
+            FOREIGN KEY (productId) REFERENCES dwh.DimProduct(id),
+            FOREIGN KEY (timeId) REFERENCES dwh.DimTime(id),
+            FOREIGN KEY (orderId) REFERENCES dwh.DimOrder(id),
+            FOREIGN KEY (channelId) REFERENCES dwh.DimChannel(id),
+            FOREIGN KEY (customerId) REFERENCES dwh.DimCustomer(id),
+            FOREIGN KEY (exchangeRateId) REFERENCES dwh.DimExchangeRate(id)
         );
-        CREATE INDEX idx_factsales_product ON FactSales(productId);
-        CREATE INDEX idx_factsales_time ON FactSales(timeId);
-        CREATE INDEX idx_factsales_customer ON FactSales(customerId);
-        CREATE INDEX idx_factsales_channel ON FactSales(channelId);
-        CREATE INDEX idx_factsales_order ON FactSales(orderId);
-        
-        CREATE TABLE FactTargetSales (
+
+        CREATE TABLE dwh.FactTargetSales (
             id INT IDENTITY(1,1) PRIMARY KEY,
             customerId INT,
             productId INT,
             targetUSD DECIMAL(10,2) NOT NULL,
             year INT NOT NULL,
             month INT NOT NULL,
-            CONSTRAINT chk_target_usd CHECK (targetUSD >= 0),
-            CONSTRAINT chk_target_year CHECK (year >= 1950 AND year <= 2200),
-            CONSTRAINT chk_target_month CHECK (month BETWEEN 1 AND 12),
-            CONSTRAINT fk_target_customer FOREIGN KEY (customerId) REFERENCES DimCustomer(id),
-            CONSTRAINT fk_target_product FOREIGN KEY (productId) REFERENCES DimProduct(id),
+            FOREIGN KEY (customerId) REFERENCES dwh.DimCustomer(id),
+            FOREIGN KEY (productId) REFERENCES dwh.DimProduct(id),
             CONSTRAINT unique_target UNIQUE (customerId, productId, year, month)
         );
-        CREATE INDEX idx_facttarget_customer ON FactTargetSales(customerId);
-        CREATE INDEX idx_facttarget_product ON FactTargetSales(productId);
-        CREATE INDEX idx_facttarget_period ON FactTargetSales(year, month);
-        
-        CREATE TABLE MetasVentas (
+
+        CREATE TABLE dwh.MetasVentas (
             MetaID INT IDENTITY(1,1) PRIMARY KEY,
             customerId INT NOT NULL,
             productId INT NOT NULL,
             Anio INT NOT NULL,
             Mes INT NOT NULL,
             MetaUSD DECIMAL(18,2) NOT NULL,
-            CONSTRAINT chk_meta_usd CHECK (MetaUSD >= 0),
-            CONSTRAINT chk_meta_year CHECK (Anio >= 1950 AND Anio <= 2200),
-            CONSTRAINT chk_meta_month CHECK (Mes BETWEEN 1 AND 12),
-            CONSTRAINT fk_meta_customer FOREIGN KEY (customerId) REFERENCES DimCustomer(id),
-            CONSTRAINT fk_meta_product FOREIGN KEY (productId) REFERENCES DimProduct(id),
+            FOREIGN KEY (customerId) REFERENCES dwh.DimCustomer(id),
+            FOREIGN KEY (productId) REFERENCES dwh.DimProduct(id),
             CONSTRAINT unique_meta UNIQUE (customerId, productId, Anio, Mes)
         );
-        CREATE INDEX idx_meta_customer ON MetasVentas(customerId);
-        CREATE INDEX idx_meta_product ON MetasVentas(productId);
-        CREATE INDEX idx_meta_period ON MetasVentas(Anio, Mes);
-        
-        PRINT '';
-        PRINT '========================================';
-        PRINT 'SCHEMA DWH INICIALIZADO EXITOSAMENTE';
-        PRINT '========================================';
-        PRINT 'Tablas de Staging: 3';
-        PRINT 'Dimensiones: 7';
-        PRINT 'Tablas de Hechos: 3';
-        PRINT 'Total: 13 tablas';
-        PRINT '========================================';
-        
+
+
+        -----------------------------------------------------------------------
+        -- Mensajes de éxito
+        -----------------------------------------------------------------------
+
+        PRINT '=========================================================';
+        PRINT 'SCHEMA del Data Warehouse INICIALIZADO CORRECTAMENTE';
+        PRINT '=========================================================';
+        PRINT 'Schemas: staging, dwh';
+        PRINT 'Tablas STAGING:   3';
+        PRINT 'Tablas DIMENSION: 7';
+        PRINT 'Tablas FACT:      3';
+        PRINT 'Total tablas:     13';
+        PRINT '=========================================================';
+
     END TRY
     BEGIN CATCH
         DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
         DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
         DECLARE @ErrorState INT = ERROR_STATE();
-        
+
         RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
     END CATCH
 END;
 GO
 
--- Otorgar permisos
 GRANT EXECUTE ON dbo.sp_init_schema TO public;
 GO
 
-GO
-
-
-EXEC dbo.sp_init_schema
+EXEC dbo.sp_init_schema;

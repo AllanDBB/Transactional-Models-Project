@@ -19,9 +19,8 @@ COPY shared/ /app/shared/
 
 # Copiar scripts de inicializacion
 COPY DWH/init_scripts/bccr_exchange_rate.py .
-COPY DWH/init_scripts/scheduler.py .
 COPY DWH/init_scripts/cargar_mapeo_productos_mysql.py .
-COPY DWH/init_scripts/entrypoint.sh .
+COPY DWH/init_scripts/scheduler.py .
 
 # Copiar .env
 COPY DWH/.env .
@@ -29,12 +28,26 @@ COPY DWH/.env .
 # Crear directorio para logs
 RUN mkdir -p /app/logs
 
-# Hacer ejecutable el entrypoint
-RUN chmod +x /app/entrypoint.sh
-
 # Configurar timezone
 ENV TZ=America/Costa_Rica
 ENV PYTHONUNBUFFERED=1
 
-# Ejecutar entrypoint que hace todo el setup
-CMD ["/app/entrypoint.sh"]
+# Ejecutar inicializacion y luego el scheduler
+CMD ["bash", "-c", "\
+  set -e; \
+  echo '==============================================================================='; \
+  echo 'Iniciando DWH Initialization & Scheduler'; \
+  echo '==============================================================================='; \
+  echo 'Esperando a que SQL Server este disponible...'; \
+  sleep 10; \
+  echo; \
+  echo 'Ejecutando poblacion historica de tipos de cambio...'; \
+  python3 bccr_exchange_rate.py populate && echo '[OK] Poblacion historica completada'; \
+  echo; \
+  echo 'Ejecutando mapeo de productos MySQL...'; \
+  python3 cargar_mapeo_productos_mysql.py load && echo '[OK] Mapeo de productos completado'; \
+  echo; \
+  echo 'Iniciando scheduler de actualizaciones diarias...'; \
+  echo '==============================================================================='; \
+  exec python3 scheduler.py \
+"]

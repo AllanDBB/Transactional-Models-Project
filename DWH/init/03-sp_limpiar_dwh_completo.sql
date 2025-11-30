@@ -21,38 +21,38 @@ BEGIN
         BEGIN TRANSACTION;
         
         -- Limpiar tablas de hechos (primero por FKs)
-        IF OBJECT_ID('FactTargetSales', 'U') IS NOT NULL DELETE FROM FactTargetSales;
-        IF OBJECT_ID('MetasVentas', 'U') IS NOT NULL DELETE FROM MetasVentas;
-        IF OBJECT_ID('FactSales', 'U') IS NOT NULL DELETE FROM FactSales;
+        IF OBJECT_ID('dwh.FactTargetSales', 'U') IS NOT NULL DELETE FROM dwh.FactTargetSales;
+        IF OBJECT_ID('dwh.MetasVentas', 'U') IS NOT NULL DELETE FROM dwh.MetasVentas;
+        IF OBJECT_ID('dwh.FactSales', 'U') IS NOT NULL DELETE FROM dwh.FactSales;
         
         -- Limpiar dimensiones
-        IF OBJECT_ID('DimOrder', 'U') IS NOT NULL DELETE FROM DimOrder;
-        IF OBJECT_ID('DimProduct', 'U') IS NOT NULL DELETE FROM DimProduct;
-        IF OBJECT_ID('DimCustomer', 'U') IS NOT NULL DELETE FROM DimCustomer;
-        IF OBJECT_ID('DimChannel', 'U') IS NOT NULL DELETE FROM DimChannel;
-        IF OBJECT_ID('DimCategory', 'U') IS NOT NULL DELETE FROM DimCategory;
-        IF OBJECT_ID('DimTime', 'U') IS NOT NULL DELETE FROM DimTime;
-        IF OBJECT_ID('DimExchangeRate', 'U') IS NOT NULL DELETE FROM DimExchangeRate;
+        IF OBJECT_ID('dwh.DimOrder', 'U') IS NOT NULL DELETE FROM dwh.DimOrder;
+        IF OBJECT_ID('dwh.DimProduct', 'U') IS NOT NULL DELETE FROM dwh.DimProduct;
+        IF OBJECT_ID('dwh.DimCustomer', 'U') IS NOT NULL DELETE FROM dwh.DimCustomer;
+        IF OBJECT_ID('dwh.DimChannel', 'U') IS NOT NULL DELETE FROM dwh.DimChannel;
+        IF OBJECT_ID('dwh.DimCategory', 'U') IS NOT NULL DELETE FROM dwh.DimCategory;
+        IF OBJECT_ID('dwh.DimTime', 'U') IS NOT NULL DELETE FROM dwh.DimTime;
+        IF OBJECT_ID('dwh.DimExchangeRate', 'U') IS NOT NULL DELETE FROM dwh.DimExchangeRate;
         
         -- Limpiar staging
-        IF OBJECT_ID('staging_source_tracking', 'U') IS NOT NULL DELETE FROM staging_source_tracking;
-        IF OBJECT_ID('staging_map_producto', 'U') IS NOT NULL DELETE FROM staging_map_producto;
-        IF OBJECT_ID('staging_tipo_cambio', 'U') IS NOT NULL DELETE FROM staging_tipo_cambio;
+        IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL DELETE FROM staging.source_tracking;
+        IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL DELETE FROM staging.map_producto;
+        IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL DELETE FROM staging.tipo_cambio;
         
         -- Resetear identidades (solo si existen)
-        IF OBJECT_ID('DimCategory', 'U') IS NOT NULL DBCC CHECKIDENT ('DimCategory', RESEED, 0);
-        IF OBJECT_ID('DimChannel', 'U') IS NOT NULL DBCC CHECKIDENT ('DimChannel', RESEED, 0);
-        IF OBJECT_ID('DimCustomer', 'U') IS NOT NULL DBCC CHECKIDENT ('DimCustomer', RESEED, 0);
-        IF OBJECT_ID('DimProduct', 'U') IS NOT NULL DBCC CHECKIDENT ('DimProduct', RESEED, 0);
-        IF OBJECT_ID('DimOrder', 'U') IS NOT NULL DBCC CHECKIDENT ('DimOrder', RESEED, 0);
-        IF OBJECT_ID('DimTime', 'U') IS NOT NULL DBCC CHECKIDENT ('DimTime', RESEED, 0);
-        IF OBJECT_ID('DimExchangeRate', 'U') IS NOT NULL DBCC CHECKIDENT ('DimExchangeRate', RESEED, 0);
-        IF OBJECT_ID('FactSales', 'U') IS NOT NULL DBCC CHECKIDENT ('FactSales', RESEED, 0);
-        IF OBJECT_ID('FactTargetSales', 'U') IS NOT NULL DBCC CHECKIDENT ('FactTargetSales', RESEED, 0);
-        IF OBJECT_ID('MetasVentas', 'U') IS NOT NULL DBCC CHECKIDENT ('MetasVentas', RESEED, 0);
-        IF OBJECT_ID('staging_source_tracking', 'U') IS NOT NULL DBCC CHECKIDENT ('staging_source_tracking', RESEED, 0);
-        IF OBJECT_ID('staging_map_producto', 'U') IS NOT NULL DBCC CHECKIDENT ('staging_map_producto', RESEED, 0);
-        IF OBJECT_ID('staging_tipo_cambio', 'U') IS NOT NULL DBCC CHECKIDENT ('staging_tipo_cambio', RESEED, 0);
+        IF OBJECT_ID('dwh.DimCategory', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimCategory', RESEED, 0);
+        IF OBJECT_ID('dwh.DimChannel', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimChannel', RESEED, 0);
+        IF OBJECT_ID('dwh.DimCustomer', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimCustomer', RESEED, 0);
+        IF OBJECT_ID('dwh.DimProduct', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimProduct', RESEED, 0);
+        IF OBJECT_ID('dwh.DimOrder', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimOrder', RESEED, 0);
+        IF OBJECT_ID('dwh.DimTime', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimTime', RESEED, 0);
+        IF OBJECT_ID('dwh.DimExchangeRate', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimExchangeRate', RESEED, 0);
+        IF OBJECT_ID('dwh.FactSales', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.FactSales', RESEED, 0);
+        IF OBJECT_ID('dwh.FactTargetSales', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.FactTargetSales', RESEED, 0);
+        IF OBJECT_ID('dwh.MetasVentas', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.MetasVentas', RESEED, 0);
+        IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.source_tracking', RESEED, 0);
+        IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.map_producto', RESEED, 0);
+        IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.tipo_cambio', RESEED, 0);
         
         COMMIT TRANSACTION;
         

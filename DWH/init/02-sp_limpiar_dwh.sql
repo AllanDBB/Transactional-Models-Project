@@ -21,35 +21,35 @@ BEGIN
         BEGIN TRANSACTION;
         
         -- Limpiar tablas de hechos (primero por FKs)
-        DELETE FROM FactTargetSales;
-        DELETE FROM MetasVentas;
-        DELETE FROM FactSales;
+        DELETE FROM dwh.FactTargetSales;
+        DELETE FROM dwh.MetasVentas;
+        DELETE FROM dwh.FactSales;
         
         -- Limpiar dimensiones
-        DELETE FROM DimOrder;
-        DELETE FROM DimProduct;
-        DELETE FROM DimCustomer;
-        DELETE FROM DimChannel;
-        DELETE FROM DimCategory;
-        DELETE FROM DimTime;
-        -- NO limpiamos DimExchangeRate (datos del BCCR)
+        DELETE FROM dwh.DimOrder;
+        DELETE FROM dwh.DimProduct;
+        DELETE FROM dwh.DimCustomer;
+        DELETE FROM dwh.DimChannel;
+        DELETE FROM dwh.DimCategory;
+        DELETE FROM dwh.DimTime;
+        -- NO limpiamos dwh.DimExchangeRate (datos del BCCR)
         
         -- Limpiar staging
-        DELETE FROM staging_source_tracking;
-        DELETE FROM staging_map_producto;
-        -- NO limpiamos staging_tipo_cambio (datos del BCCR)
+        DELETE FROM staging.source_tracking;
+        DELETE FROM staging.map_producto;
+        -- NO limpiamos staging.tipo_cambio (datos del BCCR)
         
         -- Resetear identidades (DimTime no tiene IDENTITY)
-        DBCC CHECKIDENT ('DimCategory', RESEED, 0);
-        DBCC CHECKIDENT ('DimChannel', RESEED, 0);
-        DBCC CHECKIDENT ('DimCustomer', RESEED, 0);
-        DBCC CHECKIDENT ('DimProduct', RESEED, 0);
-        DBCC CHECKIDENT ('DimOrder', RESEED, 0);
-        DBCC CHECKIDENT ('FactSales', RESEED, 0);
-        DBCC CHECKIDENT ('FactTargetSales', RESEED, 0);
-        DBCC CHECKIDENT ('MetasVentas', RESEED, 0);
-        DBCC CHECKIDENT ('staging_source_tracking', RESEED, 0);
-        DBCC CHECKIDENT ('staging_map_producto', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.DimCategory', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.DimChannel', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.DimCustomer', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.DimProduct', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.DimOrder', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.FactSales', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.FactTargetSales', RESEED, 0);
+        DBCC CHECKIDENT ('dwh.MetasVentas', RESEED, 0);
+        DBCC CHECKIDENT ('staging.source_tracking', RESEED, 0);
+        DBCC CHECKIDENT ('staging.map_producto', RESEED, 0);
         
         COMMIT TRANSACTION;
         

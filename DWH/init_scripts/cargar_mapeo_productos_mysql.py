@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Script para cargar mapeo de productos (SKU <-> codigo_alt) desde JSON
-Lee los productos de shared\generated\mysql\json\productos.json
-e inserta los mappings en staging_map_producto del DWH
+Carga mapeo de productos (SKU <-> codigo_alt) desde JSON al staging del DWH.
+Usa staging.map_producto y evita reconectar por cada insert.
 """
 
 import json
-import pymssql
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
+
+import pymssql
 from dotenv import load_dotenv
 
 # Cargar variables de entorno desde DWH/ o raiz
@@ -24,7 +24,7 @@ elif root_env.exists():
 else:
     load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -41,17 +41,15 @@ class ProductMappingLoader:
         print(f"Conectando a SQL Server en {self.server}, base de datos {self.database}")
         print(f"Usuario SQL Server: {self.username}")
 
-        # Rutas de archivos
-        # En Docker: /app/shared/, en local: ../../../shared/
+        # Rutas de archivos (Docker / local)
         docker_path = Path("/app/shared/generated/mysql/json/productos.json")
         local_path = Path(__file__).parent.parent.parent / "shared" / "generated" / "mysql" / "json" / "productos.json"
-
         self.mysql_productos_json = docker_path if docker_path.exists() else local_path
 
     def load_productos_json(self):
         """Lee el archivo JSON de productos MySQL"""
         try:
-            with open(self.mysql_productos_json, 'r', encoding='utf-8') as f:
+            with open(self.mysql_productos_json, "r", encoding="utf-8") as f:
                 productos = json.load(f)
             logger.info(f"[OK] Cargados {len(productos)} productos desde JSON")
             return productos
@@ -65,19 +63,13 @@ class ProductMappingLoader:
     def connect_to_database(self):
         """Conecta a SQL Server DWH usando pymssql"""
         try:
-            logger.debug(f"Conectando a SQL: {self.server}/{self.database}")
-
-            # Parsear servidor y puerto
             server_parts = self.server.replace(",", ":").split(":")
             server_host = server_parts[0]
             server_port = int(server_parts[1]) if len(server_parts) > 1 else 1433
 
-            # En Docker, localhost -> sqlserver-dw y puerto interno es 1433
             if server_host == "localhost":
                 server_host = "sqlserver-dw"
                 server_port = 1433
-
-            logger.debug(f"Intentando conectar a {server_host}:{server_port}/{self.database}")
 
             connection = pymssql.connect(
                 server=server_host,
@@ -86,7 +78,7 @@ class ProductMappingLoader:
                 password=self.password,
                 database=self.database,
                 timeout=10,
-                as_dict=False
+                as_dict=False,
             )
 
             logger.debug("[OK] Conexion a base de datos exitosa")
@@ -98,113 +90,75 @@ class ProductMappingLoader:
             logger.error(f"[ERROR] Error conectando a BD: {e}")
             return None
 
-    def clear_mysql_mappings(self):
-        """Elimina todos los mappings anteriores de MySQL"""
-        connection = self.connect_to_database()
-        if not connection:
-            return False
-
-        try:
-            cursor = connection.cursor()
-            cursor.execute("DELETE FROM staging_map_producto WHERE source_system = 'MySQL'")
-            connection.commit()
-            deleted_count = cursor.rowcount
-            logger.info(f"[OK] Eliminados {deleted_count} mappings anteriores de MySQL")
-            return True
-        except Exception as e:
-            logger.error(f"[ERROR] Error eliminando datos: {e}")
-            connection.rollback()
-            return False
-        finally:
-            connection.close()
-
-    def insert_product_mapping(self, source_code, sku_oficial, descripcion):
-        """Inserta un mapeo de producto en staging_map_producto"""
-        connection = self.connect_to_database()
-        if not connection:
-            return False
-
-        try:
-            cursor = connection.cursor()
-            cursor.execute("""
-                INSERT INTO staging_map_producto (source_system, source_code, sku_oficial, descripcion, activo)
-                VALUES (%s, %s, %s, %s, 1)
-            """, ('MySQL', source_code, sku_oficial, descripcion))
-            connection.commit()
-            logger.debug(f"Insertado: {source_code} -> {sku_oficial}")
-            return True
-
-        except Exception as e:
-            logger.error(f"[ERROR] Error en BD: {e}")
-            connection.rollback()
-            return False
-        finally:
-            connection.close()
-
     def load_product_mappings(self):
         """Carga los mappings de productos desde JSON al DWH"""
-
         print("\n" + "=" * 80)
         print("CARGANDO MAPEO DE PRODUCTOS (SKU <-> codigo_alt)")
         print("=" * 80)
 
-        # Eliminar mappings anteriores de MySQL
-        if not self.clear_mysql_mappings():
-            logger.error("[ERROR] No se pudieron limpiar los datos anteriores")
-            return
-
-        # Cargar productos desde JSON
         productos = self.load_productos_json()
         if not productos:
             logger.error("[ERROR] No se pudieron cargar los productos")
             return
 
-        # Procesar cada producto
-        total_insertados = 0
-        total_errores = 0
+        connection = self.connect_to_database()
+        if not connection:
+            return
 
-        for producto in productos:
-            source_code = producto.get('codigo_alt')
-            sku_oficial = producto.get('sku')
-            nombre = producto.get('nombre', '')
+        try:
+            cursor = connection.cursor()
 
-            if not source_code or not sku_oficial:
-                logger.warning(f"[ADVERTENCIA] Producto sin codigo_alt o sku: {producto}")
-                total_errores += 1
-                continue
+            # Limpiar mappings previos de MySQL
+            cursor.execute("DELETE FROM staging.map_producto WHERE source_system = %s", ("MySQL",))
 
-            # Crear descripcion combinada
-            descripcion = f"{nombre}" if nombre else "Sin descripcion"
+            # Preparar batch
+            rows = []
+            for producto in productos:
+                source_code = producto.get("codigo_alt")
+                sku_oficial = producto.get("sku")
+                nombre = producto.get("nombre", "")
 
-            # Insertar
-            if self.insert_product_mapping(source_code, sku_oficial, descripcion):
-                total_insertados += 1
-            else:
-                total_errores += 1
+                if not source_code or not sku_oficial:
+                    logger.warning(f"[ADVERTENCIA] Producto sin codigo_alt o sku: {producto}")
+                    continue
 
-        print(f"\n{'=' * 80}")
-        print("[RESULTADO] CARGA COMPLETADA")
-        print(f"   Productos insertados: {total_insertados}")
-        print(f"   Errores: {total_errores}")
-        print(f"   Total procesados: {total_insertados + total_errores}")
-        print(f"{'=' * 80}\n")
+                descripcion = nombre if nombre else "Sin descripcion"
+                rows.append(("MySQL", source_code, sku_oficial, descripcion))
 
-        logger.info("Poblacion de mappings completada")
+            if not rows:
+                logger.warning("[ADVERTENCIA] No hay filas validas para insertar")
+                return
+
+            cursor.executemany(
+                """
+INSERT INTO staging.map_producto (source_system, source_code, sku_oficial, descripcion, activo)
+VALUES (%s, %s, %s, %s, 1)
+""",
+                rows,
+            )
+            connection.commit()
+
+            print(f"\n{'=' * 80}")
+            print("[RESULTADO] CARGA COMPLETADA")
+            print(f"   Productos insertados: {len(rows)}")
+            print(f"{'=' * 80}\n")
+            logger.info(f"[OK] Insertados {len(rows)} mappings")
+
+        except Exception as e:
+            logger.error(f"[ERROR] Error al cargar mappings: {e}")
+            connection.rollback()
+        finally:
+            connection.close()
 
 
 def main():
     loader = ProductMappingLoader()
 
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
-
-        if command == "load":
-            loader.load_product_mappings()
-        else:
-            print("Comandos disponibles:")
-            print("  python cargar_mapeo_productos_mysql.py load")
-    else:
+    if len(sys.argv) > 1 and sys.argv[1] == "load":
         loader.load_product_mappings()
+    else:
+        print("Comandos disponibles:")
+        print("  python cargar_mapeo_productos_mysql.py load")
 
 
 if __name__ == "__main__":
