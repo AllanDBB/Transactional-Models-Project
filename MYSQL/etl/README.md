@@ -12,9 +12,6 @@ pip install -r requirements.txt
 ```bash
 # Copiar template de configuración
 cp .env.example .env
-
-# Editar .env con tus credenciales
-nano .env  # o usar tu editor preferido
 ```
 
 ### 3. Ejecutar ETL

@@ -11,7 +11,7 @@ Contiene paso-a-paso para:
 
 ---
 
-## 🚀 Inicio Rápido (Santiago)
+##  
 
 ### Levantar contenedores
 
