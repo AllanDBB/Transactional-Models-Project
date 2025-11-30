@@ -1,478 +1,416 @@
 """
-Modulo Transform: Aplica reglas de transformacion a los datos de MySQL
-Reglas de Integracion (ETL):
-1. Homologacion de productos: codigo_alt -> SKU oficial (tabla puente)
-2. Normalizacion de moneda: convertir CRC a USD con tabla de tipo de cambio
-3. Estandarizacion de genero: M/F/X -> valores unicos
-4. Conversion de fechas: VARCHAR a DATE/DATETIME
-5. Transformacion de totales: montos string -> decimal (limpiar comas/puntos)
+Data transformation module applying 5 integration rules:
+
+1. Product homologation: codigo_alt -> official SKU (mapping table)
+2. Currency normalization: CRC to USD using exchange rates
+3. Gender standardization: M/F/X -> standardized values
+4. Date conversion: VARCHAR to DATE/DATETIME
+5. Amount transformation: string to decimal (clean formatting)
 """
 import pandas as pd
-import numpy as np
-from datetime import datetime
+from datetime import datetime, date
 import logging
-from typing import Dict, List, Tuple
-import re
+from typing import Dict, Tuple, Optional
+import sys
+from pathlib import Path
+
+root_path = Path(__file__).resolve().parents[2]
+shared_path = root_path / "shared"
+sys.path.insert(0, str(shared_path))
+
+try:
+    from ExchangeRateHelper import ExchangeRateHelper
+except (ImportError, ModuleNotFoundError):
+    ExchangeRateHelper = None
+
+from config import ETLConfig
 
 logger = logging.getLogger(__name__)
 
 
-class DataTransformer:
-    """Transforma y normaliza datos de MySQL segun las 5 reglas de integracion ETL"""
+# ============================================================================
+# HELPER FUNCTIONS - Transformations reutilizables (Rule 4 y 5)
+# ============================================================================
 
-    # REGLA 3: Mapeo de generos (MySQL usa M/F/X)
-    GENDER_MAPPING = {
-        'M': 'Masculino',
-        'F': 'Femenino',
-        'X': 'No especificado',
-        'Masculino': 'Masculino',
-        'Femenino': 'Femenino',
-        'Otro': 'No especificado',
-        None: 'No especificado',
-        'NULL': 'No especificado',
-        '': 'No especificado'
-    }
+def clean_numeric_string(value: str) -> float:
+    """
+    Rule 5: Convert string numbers to float, handling various formats.
+
+    Formats supported:
+    - European: 1.750,00 or 1.750.000,50
+    - American: 1,200.50 or 1,200,300.50
+    - Plain: 1200.50
+    """
+    if pd.isna(value) or value == '':
+        return 0.0
+
+    value = str(value).strip()
+    comma_count = value.count(',')
+    dot_count = value.count('.')
+
+    if dot_count > 1:
+        # European: multiple dots are thousands separators (1.750.000,50)
+        parts = value.split('.')
+        value = ''.join(parts[:-1]) + '.' + parts[-1] if len(parts[-1]) == 2 else ''.join(parts)
+    elif comma_count > 1:
+        # American: multiple commas are thousands separators (1,200,300.50)
+        value = value.replace(',', '')
+    elif comma_count > 0 and dot_count > 0:
+        # Mixed: use position to determine decimal separator
+        value = value.replace(',', '') if value.rfind('.') > value.rfind(',') else value.replace('.', '').replace(',', '.')
+    elif comma_count == 1:
+        # Single comma: decimal if 2 digits after, otherwise thousands
+        parts = value.split(',')
+        value = value.replace(',', '.') if len(parts[-1]) == 2 else value.replace(',', '')
+
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning(f"Could not convert '{value}' to float, returning 0.0")
+        return 0.0
+
+
+def parse_date(fecha_str: str) -> Optional[date]:
+    """
+    Rule 4: Convert VARCHAR date string to date object.
+
+    Formats: YYYY-MM-DD, YYYY-MM-DD HH:MM:SS, YYYY/MM/DD, etc.
+    """
+    if pd.isna(fecha_str) or fecha_str == '':
+        return None
+
+    fecha_str = str(fecha_str).strip()
+    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y/%m/%d']:
+        try:
+            return pd.to_datetime(fecha_str, format=fmt).date()
+        except:
+            continue
+
+    try:
+        return pd.to_datetime(fecha_str).date()
+    except:
+        logger.warning(f"Could not parse date '{fecha_str}'")
+        return None
+
+
+def convert_currency(amount: float, from_currency: str, to_currency: str,
+                    exchange_helper = None,
+                    conversion_date: Optional[date] = None) -> float:
+    """
+    Rule 2: Convert amount from one currency to another.
+
+    If exchange_helper is available, uses real rates from DWH.
+    Falls back to default rate (515.0 for CRC->USD) if helper unavailable.
+    """
+    if pd.isna(amount) or from_currency == to_currency:
+        return amount
+
+    if exchange_helper and from_currency == 'CRC' and to_currency == 'USD':
+        converted = exchange_helper.convertir_monto(amount, from_currency, to_currency, conversion_date)
+        if pd.notna(converted):
+            return converted
+
+    # Fallback to default rate
+    if from_currency == 'CRC' and to_currency == 'USD':
+        return amount / ETLConfig.DEFAULT_CRC_USD_RATE
+
+    return amount
+
+
+# ============================================================================
+# GENDER MAPPING - Rule 3
+# ============================================================================
+
+GENDER_MAPPING = {
+    'M': 'Masculino',
+    'F': 'Femenino',
+    'X': 'No especificado',
+    'Masculino': 'Masculino',
+    'Femenino': 'Femenino',
+    'Otro': 'No especificado',
+    None: 'No especificado',
+    'NULL': 'No especificado',
+    '': 'No especificado'
+}
+
+
+# ============================================================================
+# MAIN TRANSFORMER CLASS
+# ============================================================================
+
+class DataTransformer:
+    """Transforms and normalizes MySQL data according to 5 ETL integration rules."""
 
     SOURCE_SYSTEM = 'MYSQL'
 
-    def __init__(self, exchange_rates: pd.DataFrame = None):
-        """
-        Args:
-            exchange_rates: DataFrame con tipos de cambio (fecha, tasa CRC->USD)
-        """
-        self.exchange_rates = exchange_rates
-
-    def set_exchange_rates(self, exchange_rates: pd.DataFrame):
-        """Configura los tipos de cambio para conversion CRC->USD"""
-        self.exchange_rates = exchange_rates
+    def __init__(self, exchange_rate_helper = None):
+        self.exchange_rate_helper = exchange_rate_helper
 
     def transform_clientes(self, df_clientes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        REGLA 3: Estandarizacion de genero (M/F/X -> valores unicos)
-        REGLA 4: Conversion de fechas VARCHAR a DATE
-        """
-        logger.info(f"Transformando {len(df_clientes)} clientes...")
+        Transform customer data applying Rule 3 and 4.
 
+        Rule 3: Standardize gender (M/F/X -> Male/Female/Unspecified)
+        Rule 4: Parse dates from VARCHAR to DATE
+        """
+        logger.info(f"Transforming {len(df_clientes)} customers...")
         df = df_clientes.copy()
 
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
-
-        # REGLA 3: Estandarizar genero M/F/X -> Masculino/Femenino/No especificado
-        df['genero'] = df['genero'].fillna('X')
-        df['genero'] = df['genero'].map(self.GENDER_MAPPING)
-
-        # Normalizar email
-        df['correo'] = df['correo'].str.strip().str.lower()
-
-        # REGLA 4: Convertir fecha VARCHAR 'YYYY-MM-DD' a DATE
-        df['created_at'] = pd.to_datetime(df['created_at'], format='%Y-%m-%d', errors='coerce').dt.date
-
-        # Renombrar columnas para DWH
-        df = df.rename(columns={
-            'id': 'id',
-            'nombre': 'name',
-            'correo': 'email',
-            'genero': 'gender',
-            'pais': 'country',
-            'created_at': 'created_at'
-        })
+        df['genero'] = df['genero'].fillna('X').map(GENDER_MAPPING)
+        df['correo'] = df['correo'].fillna('').str.strip().str.lower()
+        df['created_at'] = df['created_at'].apply(parse_date)
+        df['pais'] = df['pais'].str.strip()
 
         tracking = {
-            'source_system': self.SOURCE_SYSTEM,
-            'tabla_destino': 'DimCustomer',
-            'registros_procesados': len(df)
+            'total': len(df),
+            'gender_standardized': len(df[df['genero'].notna()]),
+            'date_parsed': len(df[df['created_at'].notna()])
         }
+        logger.info(f"Transformed {len(df)} customers - Gender: {tracking['gender_standardized']}, Dates: {tracking['date_parsed']}")
 
-        logger.info(f"[OK] Clientes transformados: {len(df)}")
-        logger.info(f"  Generos unicos: {df['gender'].unique()}")
         return df, tracking
 
     def transform_productos(self, df_productos: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        REGLA 1: Homologacion de productos
-        MySQL usa codigo_alt (no es SKU oficial)
-        Se mantiene para tabla puente de mapeo
-        """
-        logger.info(f"Transformando {len(df_productos)} productos...")
+        Transform product data applying Rule 1.
 
+        Rule 1: Homologate products by creating official SKU from ID.
+        codigo_alt is preserved for mapping but sku_oficial becomes the canonical code.
+        """
+        logger.info(f"Transforming {len(df_productos)} products...")
         df = df_productos.copy()
 
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
-
-        # REGLA 1: Normalizar codigo_alt
-        df['codigo_alt'] = df['codigo_alt'].str.strip().str.upper()
-
-        # Normalizar nombre
-        df['nombre'] = df['nombre'].str.strip()
-
-        # Normalizar categoria
-        df['categoria'] = df['categoria'].str.strip().str.upper()
-
-        # Renombrar columnas
-        df = df.rename(columns={
-            'id': 'id',
-            'codigo_alt': 'code',  # codigo_alt como code (para mapeo)
-            'nombre': 'name',
-            'categoria': 'categoryId'
-        })
+        df['sku_oficial'] = 'SKU-' + df['id'].astype(str).str.zfill(5)
+        df['categoria'] = df['categoria'].str.strip()
 
         tracking = {
-            'source_system': self.SOURCE_SYSTEM,
-            'tabla_destino': 'DimProduct',
-            'registros_procesados': len(df)
+            'total': len(df),
+            'sku_generated': len(df[df['sku_oficial'].notna()])
         }
+        logger.info(f"Transformed {len(df)} products")
 
-        logger.info(f"[OK] Productos transformados: {len(df)}")
-        logger.info(f"  Codigos unicos: {df['code'].nunique()}")
         return df, tracking
-
-    def _clean_numeric_string(self, value) -> float:
-        """
-        REGLA 5: Limpia strings con formatos numericos (comas, puntos)
-        Ej: '1,200.50' -> 1200.50, '1.200,50' -> 1200.50
-        """
-        if pd.isna(value):
-            return np.nan
-
-        value_str = str(value).strip()
-
-        # Detectar formato: si tiene coma como decimal (europeo)
-        # 1.200,50 -> decimal es coma
-        # 1,200.50 -> decimal es punto
-        if re.match(r'^\d{1,3}(\.\d{3})*(,\d+)?$', value_str):
-            # Formato europeo: 1.200,50
-            value_str = value_str.replace('.', '').replace(',', '.')
-        else:
-            # Formato americano: 1,200.50
-            value_str = value_str.replace(',', '')
-
-        try:
-            return float(value_str)
-        except ValueError:
-            return np.nan
 
     def transform_ordenes(self, df_ordenes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        REGLA 2: Normalizacion de moneda (CRC -> USD con tipo de cambio)
-        REGLA 4: Conversion de fechas VARCHAR a DATETIME
-        REGLA 5: Transformacion de totales string -> decimal
-        """
-        logger.info(f"Transformando {len(df_ordenes)} ordenes...")
+        Transform order data applying Rule 2, 4 and 5.
 
+        Rule 2: Normalize currency to USD using exchange rates
+        Rule 4: Parse order dates from VARCHAR to DATETIME
+        Rule 5: Clean amount strings to decimal numbers
+        """
+        logger.info(f"Transforming {len(df_ordenes)} orders...")
         df = df_ordenes.copy()
 
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
+        df['fecha'] = df['fecha'].apply(lambda x: pd.to_datetime(parse_date(x)) if parse_date(x) else None)
+        df['total_limpio'] = df['total'].apply(clean_numeric_string)
 
-        # REGLA 4: Convertir fecha VARCHAR 'YYYY-MM-DD HH:MM:SS' a DATETIME
-        df['fecha'] = pd.to_datetime(df['fecha'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+        # Apply Rule 2: Currency conversion
+        crc_rows = df['moneda'] == 'CRC'
+        if crc_rows.any():
+            if self.exchange_rate_helper:
+                logger.info(f"Converting {crc_rows.sum()} orders from CRC to USD using DWH rates")
+                df['total_usd'] = df.apply(
+                    lambda row: convert_currency(
+                        row['total_limpio'], 'CRC', 'USD',
+                        self.exchange_rate_helper,
+                        row['fecha'].date() if pd.notna(row['fecha']) else None
+                    ) if row['moneda'] == 'CRC' else row['total_limpio'],
+                    axis=1
+                )
+            else:
+                logger.info(f"Converting {crc_rows.sum()} orders using default rate")
+                df['total_usd'] = df.apply(
+                    lambda row: convert_currency(row['total_limpio'], row['moneda'], 'USD')
+                    if row['moneda'] != 'USD' else row['total_limpio'],
+                    axis=1
+                )
+        else:
+            df['total_usd'] = df['total_limpio']
 
-        # REGLA 5: Convertir total string -> decimal (limpiar comas/puntos)
-        df['total'] = df['total'].apply(self._clean_numeric_string)
-
-        # Normalizar canal
         df['canal'] = df['canal'].str.strip().str.upper()
 
-        # REGLA 2: Conversion de moneda CRC -> USD
-        df['moneda'] = df['moneda'].fillna('USD').str.upper()
-        df['total_usd'] = df.apply(self._convert_to_usd, axis=1)
-
-        # Validar totales
-        df = df.dropna(subset=['total_usd'])
-        df = df[df['total_usd'] >= 0]
-
-        # Renombrar columnas
-        df = df.rename(columns={
-            'id': 'id',
-            'cliente_id': 'customerId',
-            'fecha': 'date',
-            'canal': 'channel',
-            'total_usd': 'totalOrderUSD'
-        })
-
         tracking = {
-            'source_system': self.SOURCE_SYSTEM,
-            'tabla_destino': 'FactSales',
-            'registros_procesados': len(df),
-            'monedas_encontradas': df_ordenes['moneda'].unique().tolist()
+            'total': len(df),
+            'date_parsed': len(df[df['fecha'].notna()]),
+            'amount_cleaned': len(df[df['total_limpio'] > 0]),
+            'crc_converted': crc_rows.sum()
         }
+        logger.info(f"Transformed {len(df)} orders - Dates: {tracking['date_parsed']}, CRC: {tracking['crc_converted']}")
 
-        logger.info(f"[OK] Ordenes transformadas: {len(df)}")
-        logger.info(f"  Monedas convertidas a USD")
         return df, tracking
 
-    def _convert_to_usd(self, row) -> float:
+    def transform_orden_detalle(self, df_detalle: pd.DataFrame, df_ordenes: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
-        REGLA 2: Convierte monto a USD usando tipo de cambio
+        Transform order detail line items applying Rule 2 and 5.
+
+        Rule 2: Convert unit prices from order currency to USD
+        Rule 5: Clean unit price strings to decimal numbers
         """
-        moneda = row.get('moneda', 'USD')
-        total = row.get('total', 0)
-        fecha = row.get('fecha')
-
-        if pd.isna(total):
-            return np.nan
-
-        if moneda == 'USD':
-            return float(total)
-
-        if moneda == 'CRC':
-            # Buscar tipo de cambio para la fecha
-            if self.exchange_rates is not None and not self.exchange_rates.empty:
-                fecha_date = pd.to_datetime(fecha).date() if pd.notna(fecha) else None
-                if fecha_date:
-                    rate_row = self.exchange_rates[
-                        self.exchange_rates['fecha'] == fecha_date
-                    ]
-                    if not rate_row.empty:
-                        tasa = rate_row.iloc[0]['tasa']
-                        return float(total) / tasa
-
-            # Tasa por defecto si no hay datos
-            DEFAULT_CRC_USD_RATE = 515.0
-            logger.debug(f"Usando tasa por defecto CRC/USD: {DEFAULT_CRC_USD_RATE}")
-            return float(total) / DEFAULT_CRC_USD_RATE
-
-        # Moneda desconocida, asumir USD
-        logger.warning(f"Moneda desconocida: {moneda}, asumiendo USD")
-        return float(total)
-
-    def transform_orden_detalle(self, df_detalle: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        REGLA 5: Transformacion de totales
-        - Convierte precios string -> decimal (limpiar comas/puntos)
-        - Valida cantidades > 0
-        - Calcula linea total
-        """
-        logger.info(f"Transformando {len(df_detalle)} lineas de detalle...")
-
+        logger.info(f"Transforming {len(df_detalle)} order details...")
         df = df_detalle.copy()
 
         df['source_system'] = self.SOURCE_SYSTEM
         df['source_key'] = df['id'].astype(str)
+        df['precio_unit_limpio'] = df['precio_unit'].apply(clean_numeric_string)
 
-        # REGLA 5: Convertir precio string -> decimal
-        df['precio_unit'] = df['precio_unit'].apply(self._clean_numeric_string)
+        # Join with orders to get currency and date
+        df = df.merge(
+            df_ordenes[['id', 'moneda', 'fecha']],
+            left_on='orden_id', right_on='id', how='left', suffixes=('', '_orden')
+        )
 
-        # Convertir cantidad
-        df['cantidad'] = pd.to_numeric(df['cantidad'], errors='coerce').astype('Int64')
+        # Preserve fecha from order
+        if 'fecha_orden' in df.columns:
+            df['fecha'] = df['fecha_orden']
+            df = df.drop(columns=['fecha_orden'])
 
-        # MySQL no tiene descuento en detalle, agregar columna con 0
-        df['descuento_pct'] = 0.0
-
-        # Validar datos
-        df = df.dropna(subset=['precio_unit', 'cantidad'])
-        df = df[(df['cantidad'] > 0) & (df['precio_unit'] >= 0)]
-
-        # Renombrar columnas
-        df = df.rename(columns={
-            'id': 'id',
-            'orden_id': 'orderId',
-            'producto_id': 'productId',
-            'cantidad': 'productCant',
-            'precio_unit': 'productUnitPrice',
-            'descuento_pct': 'discountPercentage'
-        })
+        # Apply Rule 2: Convert prices to USD
+        crc_rows = df['moneda'] == 'CRC'
+        if crc_rows.any():
+            if self.exchange_rate_helper:
+                logger.info(f"Converting {crc_rows.sum()} unit prices from CRC to USD")
+                df['precio_unit_usd'] = df.apply(
+                    lambda row: convert_currency(
+                        row['precio_unit_limpio'], 'CRC', 'USD',
+                        self.exchange_rate_helper,
+                        row['fecha'].date() if pd.notna(row['fecha']) else None
+                    ) if row['moneda'] == 'CRC' else row['precio_unit_limpio'],
+                    axis=1
+                )
+            else:
+                logger.info(f"Converting {crc_rows.sum()} unit prices using default rate")
+                df['precio_unit_usd'] = df.apply(
+                    lambda row: convert_currency(row['precio_unit_limpio'], row['moneda'], 'USD')
+                    if row['moneda'] != 'USD' else row['precio_unit_limpio'],
+                    axis=1
+                )
+        else:
+            df['precio_unit_usd'] = df['precio_unit_limpio']
 
         tracking = {
-            'source_system': self.SOURCE_SYSTEM,
-            'tabla_destino': 'FactSales',
-            'registros_procesados': len(df)
+            'total': len(df),
+            'price_cleaned': len(df[df['precio_unit_limpio'] > 0]),
+            'crc_converted': crc_rows.sum()
         }
+        logger.info(f"Transformed {len(df)} details - Prices cleaned: {tracking['price_cleaned']}, CRC: {tracking['crc_converted']}")
 
-        logger.info(f"[OK] Detalles transformados: {len(df)}")
         return df, tracking
 
     def extract_categorias(self, df_productos: pd.DataFrame) -> pd.DataFrame:
-        """Extrae categorias unicas para DimCategory"""
-        logger.info("Extrayendo categorias unicas...")
-
-        categorias = df_productos[['categoryId']].drop_duplicates()
-        categorias = categorias.rename(columns={'categoryId': 'name'})
-
-        logger.info(f"[OK] Categorias extraidas: {len(categorias)}")
+        """Extract unique categories from products."""
+        categorias = df_productos[['categoria']].drop_duplicates().reset_index(drop=True)
+        categorias['categoria_id'] = range(1, len(categorias) + 1)
         return categorias
 
     def extract_canales(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
-        """Extrae canales unicos para DimChannel"""
-        logger.info("Extrayendo canales unicos...")
-
-        canales = df_ordenes[['channel']].drop_duplicates()
-        canales = canales.rename(columns={'channel': 'name'})
-
-        logger.info(f"[OK] Canales extraidos: {len(canales)}")
+        """Extract unique sales channels from orders."""
+        canales = df_ordenes[['canal']].drop_duplicates().reset_index(drop=True)
+        canales['canal_id'] = range(1, len(canales) + 1)
+        canales.columns = ['nombre', 'canal_id']
         return canales
 
     def generate_dimtime(self, df_ordenes: pd.DataFrame) -> pd.DataFrame:
-        """
-        Genera tabla DimTime
-        Para MySQL: incluye conversion de moneda (CRC puede estar presente)
-        """
-        logger.info("Generando DimTime...")
+        """Generate time dimension from order date range."""
+        if df_ordenes['fecha'].isna().all():
+            logger.warning("No valid dates found in orders")
+            return pd.DataFrame()
 
-        fechas = df_ordenes['date'].dt.date.unique()
-        fechas = pd.to_datetime(fechas)
+        fechas = pd.to_datetime(df_ordenes['fecha'].dropna()).dt.date.unique()
+        fechas = sorted(fechas)
 
-        dim_time = pd.DataFrame({
-            'date': fechas,
-            'year': fechas.year,
-            'month': fechas.month,
-            'day': fechas.day,
-            'exchangeRateToUSD': 1.0  # Se actualiza con BCCR
-        })
+        if len(fechas) == 0:
+            return pd.DataFrame()
 
-        dim_time['id'] = range(1, len(dim_time) + 1)
+        fecha_min, fecha_max = min(fechas), max(fechas)
+        date_range = pd.date_range(start=fecha_min, end=fecha_max, freq='D')
 
-        logger.info(f"[OK] DimTime generada: {len(dim_time)} fechas")
-        return dim_time[['id', 'year', 'month', 'day', 'date', 'exchangeRateToUSD']]
+        dim_time = [
+            {
+                'time_id': idx,
+                'fecha': fecha.date(),
+                'anio': fecha.year,
+                'mes': fecha.month,
+                'dia': fecha.day,
+                'trimestre': (fecha.month - 1) // 3 + 1
+            }
+            for idx, fecha in enumerate(date_range, start=1)
+        ]
+
+        return pd.DataFrame(dim_time)
 
     def build_product_mapping(self, df_productos: pd.DataFrame) -> pd.DataFrame:
         """
-        REGLA 1: Construye tabla puente de mapeo de productos
-        Para MySQL: source_system='MYSQL', source_code=codigo_alt
-        El SKU oficial se obtiene de la tabla de mapeo existente o se genera
-        """
-        logger.info("Construyendo tabla de mapeo de productos...")
+        Rule 1: Build product mapping table linking codigo_alt to official SKU.
 
+        Used for traceability and cross-source product matching.
+        """
         mapping = pd.DataFrame({
-            'source_system': self.SOURCE_SYSTEM,
-            'source_code': df_productos['code'],
-            'sku_oficial': df_productos['code'],  # Se actualizara con mapeo real
-            'descripcion': df_productos['name']
+            'source_system': df_productos['source_system'],
+            'source_code': df_productos['codigo_alt'],
+            'sku_oficial': df_productos['sku_oficial'],
+            'descripcion': df_productos['nombre']
         })
 
-        logger.info(f"[OK] Mapeo de {len(mapping)} productos generado")
+        logger.info(f"Built {len(mapping)} product mappings for Rule 1")
         return mapping
 
-    def build_fact_sales(self, df_detalles: pd.DataFrame, df_ordenes: pd.DataFrame,
-                         df_productos: pd.DataFrame, df_clientes: pd.DataFrame,
-                         dw_connection_string: str) -> pd.DataFrame:
+    def build_fact_sales(
+        self,
+        df_detalle: pd.DataFrame,
+        df_ordenes: pd.DataFrame,
+        df_productos: pd.DataFrame,
+        df_clientes: pd.DataFrame,
+        dw_connection_string: str,
+        order_tracking: Dict
+    ) -> pd.DataFrame:
         """
-        Construye FactSales con FKs a las dimensiones del DWH
-        Incluye conversion de moneda para MySQL (REGLA 2)
+        Build FactSales by joining order details with dimensions.
+
+        Uses inner joins to ensure only valid records with complete references are included.
+        Orphaned details (with missing orders/products/customers) are excluded.
+        Preserves source_keys for traceability to source system.
         """
-        import pyodbc
+        logger.info("Building FactSales table...")
 
-        logger.info(f"Construyendo FactSales con {len(df_detalles)} registros...")
-
-        # JOIN con ordenes para obtener customerId, channel, date, moneda
-        df_fact = df_detalles.merge(
-            df_ordenes[['id', 'customerId', 'channel', 'date', 'moneda', 'totalOrderUSD']],
-            left_on='orderId',
-            right_on='id',
-            suffixes=('', '_orden')
+        # Join details with orders
+        fact = df_detalle.merge(
+            df_ordenes[['id', 'cliente_id', 'fecha', 'canal', 'moneda', 'total_usd', 'source_key']],
+            left_on='orden_id', right_on='id', how='inner', suffixes=('_detalle', '_orden')
         )
+        fact.rename(columns={
+            'source_key_orden': 'orden_source_key',
+            'source_key_detalle': 'detalle_source_key',
+            'moneda_orden': 'moneda'
+        }, inplace=True)
 
-        # Agregar email de clientes
-        df_fact = df_fact.merge(
-            df_clientes[['id', 'email']],
-            left_on='customerId',
-            right_on='id',
-            suffixes=('', '_cliente')
+        # Use fecha from order (df_detalle should already have it from transform_orden_detalle)
+        if 'fecha_orden' in fact.columns:
+            fact['fecha'] = fact['fecha_orden']
+            fact = fact.drop(columns=['fecha_orden'])
+
+        # Join with products
+        fact = fact.merge(
+            df_productos[['id', 'sku_oficial', 'categoria', 'source_key']],
+            left_on='producto_id', right_on='id', how='inner', suffixes=('', '_producto')
         )
+        fact.rename(columns={'source_key': 'producto_source_key'}, inplace=True)
 
-        # Agregar code de productos
-        df_fact = df_fact.merge(
-            df_productos[['id', 'code']],
-            left_on='productId',
-            right_on='id',
-            suffixes=('', '_producto')
+        # Join with customers
+        fact = fact.merge(
+            df_clientes[['id', 'pais', 'source_key']],
+            left_on='cliente_id', right_on='id', how='inner', suffixes=('', '_cliente')
         )
+        fact.rename(columns={'source_key': 'cliente_source_key'}, inplace=True)
 
-        # Conectar al DWH para mapear IDs
-        conn = pyodbc.connect(dw_connection_string)
-        cursor = conn.cursor()
+        # Calculate line total in USD
+        fact['monto_linea'] = fact['precio_unit_usd'] * fact['cantidad']
 
-        # Mapear code -> DimProduct.id
-        cursor.execute("SELECT id, code FROM DimProduct")
-        product_map = {code: id for id, code in cursor.fetchall()}
-
-        # Mapear email -> DimCustomer.id
-        cursor.execute("SELECT id, email FROM DimCustomer")
-        customer_map = {email: id for id, email in cursor.fetchall()}
-
-        # Mapear channel -> DimChannel.id
-        cursor.execute("SELECT id, name FROM DimChannel")
-        channel_map = {name: id for id, name in cursor.fetchall()}
-
-        # Mapear date -> DimTime.id
-        cursor.execute("SELECT id, date FROM DimTime")
-        time_map = {str(date): id for id, date in cursor.fetchall()}
-
-        cursor.close()
-        conn.close()
-
-        # Aplicar mapeos
-        df_fact['productId_dwh'] = df_fact['code'].map(product_map)
-        df_fact['customerId_dwh'] = df_fact['email'].map(customer_map)
-        df_fact['channelId'] = df_fact['channel'].map(channel_map)
-        df_fact['timeId'] = df_fact['date'].astype(str).str[:10].map(time_map)
-
-        # REGLA 2: Convertir precio unitario a USD si es CRC
-        df_fact['productUnitPriceUSD'] = df_fact.apply(
-            lambda row: self._convert_unit_price_to_usd(
-                row['productUnitPrice'],
-                row.get('moneda', 'USD'),
-                row['date']
-            ),
-            axis=1
-        )
-
-        # Calcular linea total USD
-        df_fact['lineTotalUSD'] = (
-            df_fact['productUnitPriceUSD'] *
-            df_fact['productCant'] *
-            (1 - df_fact['discountPercentage'] / 100)
-        )
-
-        # Crear orderId secuencial
-        df_fact = df_fact.sort_values('orderId')
-        orden_ids_unicos = df_fact['orderId'].unique()
-        orden_id_map = {old_id: new_id for new_id, old_id in enumerate(orden_ids_unicos, start=1)}
-        df_fact['orderId_dwh'] = df_fact['orderId'].map(orden_id_map)
-
-        # Preparar DataFrame final
-        df_fact_final = pd.DataFrame({
-            'productId': df_fact['productId_dwh'],
-            'timeId': df_fact['timeId'],
-            'orderId': df_fact['orderId_dwh'],
-            'channelId': df_fact['channelId'],
-            'customerId': df_fact['customerId_dwh'],
-            'productCant': df_fact['productCant'],
-            'productUnitPriceUSD': df_fact['productUnitPriceUSD'],
-            'lineTotalUSD': df_fact['lineTotalUSD'],
-            'discountPercentage': df_fact['discountPercentage'],
-            'created_at': datetime.now(),
-            'exchangeRateId': np.nan
-        })
-
-        # Eliminar registros con FKs nulas
-        df_fact_final = df_fact_final.dropna(subset=['productId', 'customerId', 'channelId', 'timeId'])
-
-        logger.info(f"[OK] FactSales construido: {len(df_fact_final)} registros validos")
-        return df_fact_final
-
-    def _convert_unit_price_to_usd(self, price, moneda, fecha) -> float:
-        """Convierte precio unitario a USD"""
-        if pd.isna(price):
-            return np.nan
-
-        if moneda == 'USD':
-            return float(price)
-
-        if moneda == 'CRC':
-            if self.exchange_rates is not None and not self.exchange_rates.empty:
-                fecha_date = pd.to_datetime(fecha).date() if pd.notna(fecha) else None
-                if fecha_date:
-                    rate_row = self.exchange_rates[
-                        self.exchange_rates['fecha'] == fecha_date
-                    ]
-                    if not rate_row.empty:
-                        tasa = rate_row.iloc[0]['tasa']
-                        return float(price) / tasa
-
-            DEFAULT_CRC_USD_RATE = 515.0
-            return float(price) / DEFAULT_CRC_USD_RATE
-
-        return float(price)
+        logger.info(f"Built FactSales with {len(fact)} rows")
+        return fact

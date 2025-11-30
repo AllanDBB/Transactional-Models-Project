@@ -1,8 +1,9 @@
+-- create database MSSQL_DW;
+
 -- ============================================================================
 -- 00-sp_init_schema.sql
 -- Stored Procedure para inicializar schema completo del DWH
 -- ============================================================================
-
 USE MSSQL_DW;
 GO
 
@@ -244,3 +245,6 @@ GRANT EXECUTE ON dbo.sp_init_schema TO public;
 GO
 
 GO
+
+
+EXEC dbo.sp_init_schema
