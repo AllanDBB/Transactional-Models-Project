@@ -1,9 +1,13 @@
--- create database MSSQL_DW;
-
 -- ============================================================================
 -- 00-sp_init_schema.sql
 -- Stored Procedure para inicializar schema completo del DWH
 -- ============================================================================
+
+-- Crear base de datos si no existe
+IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'MSSQL_DW')
+    CREATE DATABASE MSSQL_DW;
+GO
+
 USE MSSQL_DW;
 GO
 

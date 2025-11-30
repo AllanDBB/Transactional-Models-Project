@@ -23,7 +23,7 @@ COPY DWH/init_scripts/scheduler.py .
 COPY DWH/init_scripts/cargar_mapeo_productos_mysql.py .
 COPY DWH/init_scripts/entrypoint.sh .
 
-# Copiar .env desde DWH/
+# Copiar .env
 COPY DWH/.env .
 
 # Crear directorio para logs

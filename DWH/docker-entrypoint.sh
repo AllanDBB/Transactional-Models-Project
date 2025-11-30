@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entrypoint para SQL Server DWH con inicialización
+# Entrypoint para SQL Server DWH con inicializacion
 
 # Iniciar SQL Server en background
 /opt/mssql/bin/sqlservr &
@@ -16,8 +16,8 @@ for i in {1..60}; do
     sleep 1
 done
 
-# Ejecutar scripts de inicialización en orden
-echo "Ejecutando scripts de inicialización DWH..."
+# Ejecutar scripts de inicializacion en orden
+echo "Ejecutando scripts de inicializacion DWH..."
 for script in /docker-entrypoint-initdb.d/*.sql; do
     if [ -f "$script" ]; then
         echo "Ejecutando: $(basename "$script")"
@@ -25,12 +25,12 @@ for script in /docker-entrypoint-initdb.d/*.sql; do
         if [ $? -eq 0 ]; then
             echo "OK: Completado $(basename "$script")"
         else
-            echo "ERROR: Falló $(basename "$script")"
+            echo "ERROR: Fallo $(basename "$script")"
         fi
     fi
 done
 
-echo "Inicialización DWH completada"
+echo "Inicializacion DWH completada"
 
 # Mantener SQL Server en foreground
 wait $SQLSERVER_PID
