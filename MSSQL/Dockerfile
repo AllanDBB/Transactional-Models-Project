@@ -16,9 +16,13 @@ ENV PATH="/opt/mssql-tools18/bin:${PATH}" \
     TZ=America/Costa_Rica
 
 # Copiar scripts SQL
-COPY MSSQL/init/*.sql /docker-entrypoint-initdb.d/
+COPY MSSQL/init/*.sql /usr/src/app/
+
+# Copiar script de inicialización
+COPY MSSQL/init-db.sh /usr/src/app/init-db.sh
+RUN chmod +x /usr/src/app/init-db.sh
 
 EXPOSE 1433
 
-# Iniciar SQL Server directamente (sin bash scripts)
-CMD ["/opt/mssql/bin/sqlservr"]
+# Iniciar SQL Server y ejecutar scripts de inicialización
+CMD /usr/src/app/init-db.sh & /opt/mssql/bin/sqlservr
