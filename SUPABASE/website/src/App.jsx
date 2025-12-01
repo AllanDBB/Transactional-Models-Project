@@ -4,10 +4,6 @@ import "./App.css";
 
 const CHANNELS = ["WEB", "APP", "PARTNER"];
 const CURRENCIES = ["USD", "CRC"];
-const GENDERS = ["Masculino", "Femenino", "Otro"];
-
-const emptyCliente = { nombre: "", email: "", genero: "", pais: "" };
-const emptyProducto = { nombre: "", categoria: "", sku: "" };
 
 const emptyItem = { producto_id: "", cantidad: 1, precio_unit: 0 };
 
@@ -15,14 +11,6 @@ export default function App() {
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
-  const [clienteSearch, setClienteSearch] = useState("");
-  const [productoSearch, setProductoSearch] = useState("");
-
-  const [clienteForm, setClienteForm] = useState(emptyCliente);
-  const [clienteEditId, setClienteEditId] = useState(null);
-
-  const [productoForm, setProductoForm] = useState(emptyProducto);
-  const [productoEditId, setProductoEditId] = useState(null);
 
   const [ordenClienteId, setOrdenClienteId] = useState("");
   const [ordenCanal, setOrdenCanal] = useState(CHANNELS[0]);
@@ -73,7 +61,7 @@ export default function App() {
       .from("orden")
       .select("*")
       .order("fecha", { ascending: false })
-      .limit(80); // limitar listado para evitar query enorme
+      .limit(80);
     if (error) throw error;
     const ids = (ords || []).map((o) => o.orden_id);
     let detalles = [];
@@ -114,176 +102,55 @@ export default function App() {
     }
   };
 
-  const filteredClientes = useMemo(() => {
-    const term = clienteSearch.toLowerCase().trim();
-    if (!term) return clientes;
-    return clientes.filter(
-      (c) =>
-        (c.nombre || "").toLowerCase().includes(term) ||
-        (c.email || "").toLowerCase().includes(term) ||
-        (c.pais || "").toLowerCase().includes(term)
-    );
-  }, [clienteSearch, clientes]);
-
-  const filteredProductos = useMemo(() => {
-    const term = productoSearch.toLowerCase().trim();
-    if (!term) return productos;
-    return productos.filter(
-      (p) =>
-        (p.nombre || "").toLowerCase().includes(term) ||
-        (p.categoria || "").toLowerCase().includes(term) ||
-        (p.sku || "").toLowerCase().includes(term)
-    );
-  }, [productoSearch, productos]);
-
-  const saveCliente = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const payload = {
-        ...clienteForm,
-        fecha_registro: clienteForm.fecha_registro || new Date().toISOString(),
-      };
-      if (clienteEditId) {
-        const { error } = await supabase
-          .from("cliente")
-          .update(payload)
-          .eq("cliente_id", clienteEditId);
-        if (error) throw error;
-        notify("ok", "Cliente actualizado.");
-      } else {
-        const { error } = await supabase.from("cliente").insert([payload]);
-        if (error) throw error;
-        notify("ok", "Cliente creado.");
-      }
-      setClienteForm(emptyCliente);
-      setClienteEditId(null);
-      await loadClientes();
-    } catch (err) {
-      console.error(err);
-      notify("error", "No se pudo guardar el cliente.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveProducto = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const payload = {
-        ...productoForm,
-        fecha_registro: productoForm.fecha_registro || new Date().toISOString(),
-      };
-      if (productoEditId) {
-        const { error } = await supabase
-          .from("producto")
-          .update(payload)
-          .eq("producto_id", productoEditId);
-        if (error) throw error;
-        notify("ok", "Producto actualizado.");
-      } else {
-        const { error } = await supabase.from("producto").insert([payload]);
-        if (error) throw error;
-        notify("ok", "Producto creado.");
-      }
-      setProductoForm(emptyProducto);
-      setProductoEditId(null);
-      await loadProductos();
-    } catch (err) {
-      console.error(err);
-      notify("error", "No se pudo guardar el producto.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteCliente = async (id) => {
-    if (!id || !confirm("¿Eliminar cliente?")) return;
-    setBusy(true);
-    try {
-      const { error } = await supabase.from("cliente").delete().eq("cliente_id", id);
-      if (error) throw error;
-      notify("ok", "Cliente eliminado.");
-      await Promise.all([loadClientes(), loadOrdenes()]);
-    } catch (err) {
-      console.error(err);
-      notify("error", "No se pudo eliminar el cliente.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteProducto = async (id) => {
-    if (!id || !confirm("¿Eliminar producto?")) return;
-    setBusy(true);
-    try {
-      const { error } = await supabase.from("producto").delete().eq("producto_id", id);
-      if (error) throw error;
-      notify("ok", "Producto eliminado.");
-      await Promise.all([loadProductos(), loadOrdenes()]);
-    } catch (err) {
-      console.error(err);
-      notify("error", "No se pudo eliminar el producto.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addOrdenItem = () => setOrdenItems([...ordenItems, { ...emptyItem }]);
-
   const updateOrdenItem = (idx, field, value) => {
-    const next = [...ordenItems];
-    next[idx] = { ...next[idx], [field]: field === "producto_id" ? value : Number(value) };
-    setOrdenItems(next);
+    const copy = [...ordenItems];
+    copy[idx][field] = value;
+    setOrdenItems(copy);
+  };
+
+  const addOrdenItem = () => {
+    setOrdenItems([...ordenItems, emptyItem]);
   };
 
   const removeOrdenItem = (idx) => {
-    if (ordenItems.length === 1) return;
     setOrdenItems(ordenItems.filter((_, i) => i !== idx));
   };
 
   const saveOrden = async (e) => {
     e.preventDefault();
-    if (!ordenClienteId) {
-      notify("error", "Selecciona un cliente para la orden.");
-      return;
-    }
-    if (ordenItems.some((it) => !it.producto_id || it.cantidad <= 0 || it.precio_unit < 0)) {
-      notify("error", "Revisa productos, cantidad y precio.");
-      return;
-    }
-
     setBusy(true);
     try {
-      const { data: ordData, error: ordErr } = await supabase
+      const total = ordenItems.reduce(
+        (sum, it) => sum + Number(it.cantidad) * Number(it.precio_unit),
+        0
+      );
+      const { data: ord, error: ordErr } = await supabase
         .from("orden")
-        .insert([
-          {
-            cliente_id: ordenClienteId,
-            fecha: new Date().toISOString(),
-            canal: ordenCanal,
-            moneda: ordenMoneda,
-            total: totalOrden,
-          },
-        ])
-        .select("orden_id")
+        .insert({
+          cliente_id: ordenClienteId,
+          fecha: new Date().toISOString(),
+          canal: ordenCanal,
+          moneda: ordenMoneda,
+          total: total.toFixed(2),
+        })
+        .select()
         .single();
       if (ordErr) throw ordErr;
 
-      const detallesPayload = ordenItems.map((it) => ({
-        orden_id: ordData.orden_id,
+      const detalles = ordenItems.map((it) => ({
+        orden_id: ord.orden_id,
         producto_id: it.producto_id,
-        cantidad: it.cantidad,
-        precio_unit: it.precio_unit,
+        cantidad: Number(it.cantidad),
+        precio_unit: Number(it.precio_unit),
       }));
-      const { error: detErr } = await supabase.from("orden_detalle").insert(detallesPayload);
+      const { error: detErr } = await supabase.from("orden_detalle").insert(detalles);
       if (detErr) throw detErr;
 
-      notify("ok", "Orden creada.");
-      setOrdenItems([emptyItem]);
+      notify("ok", "Orden creada exitosamente.");
+      setOrdenClienteId("");
       setOrdenCanal(CHANNELS[0]);
       setOrdenMoneda(CURRENCIES[0]);
+      setOrdenItems([emptyItem]);
       await loadOrdenes();
     } catch (err) {
       console.error(err);
@@ -294,7 +161,7 @@ export default function App() {
   };
 
   const deleteOrden = async (id) => {
-    if (!id || !confirm("¿Eliminar orden y sus detalles?")) return;
+    if (!confirm("¿Eliminar orden?")) return;
     setBusy(true);
     try {
       await supabase.from("orden_detalle").delete().eq("orden_id", id);
@@ -317,7 +184,7 @@ export default function App() {
           <p className="eyebrow">Supabase</p>
           <h1>Backoffice de Ventas</h1>
           <p className="subtitle">
-            CRUD completo para clientes, productos y órdenes en Supabase. Todo en un panel rápido.
+            Gestión de órdenes en Supabase
           </p>
           {toast.text && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         </div>
@@ -336,208 +203,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      <section className="grid two">
-        <div className="card">
-          <div className="card-head">
-            <h2>Clientes</h2>
-            <button className="ghost" onClick={() => loadClientes()} disabled={busy}>
-              ↻
-            </button>
-          </div>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <label>Buscar cliente</label>
-            <input
-              placeholder="Nombre, email o país"
-              value={clienteSearch}
-              onChange={(e) => setClienteSearch(e.target.value)}
-            />
-          </div>
-          <form className="form" onSubmit={saveCliente}>
-            <div className="row">
-              <label>Nombre</label>
-              <input
-                value={clienteForm.nombre}
-                onChange={(e) => setClienteForm({ ...clienteForm, nombre: e.target.value })}
-                required
-              />
-            </div>
-            <div className="row">
-              <label>Email</label>
-              <input
-                type="email"
-                value={clienteForm.email}
-                onChange={(e) => setClienteForm({ ...clienteForm, email: e.target.value })}
-                required
-              />
-            </div>
-            <div className="row split">
-              <div>
-                <label>Género</label>
-                <select
-                  value={clienteForm.genero}
-                  onChange={(e) => setClienteForm({ ...clienteForm, genero: e.target.value })}
-                >
-                  <option value="">-</option>
-                  {GENDERS.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label>País</label>
-                <input
-                  value={clienteForm.pais}
-                  onChange={(e) => setClienteForm({ ...clienteForm, pais: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={busy}>
-                {clienteEditId ? "Actualizar" : "Crear"} cliente
-              </button>
-              {clienteEditId && (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => {
-                    setClienteEditId(null);
-                    setClienteForm(emptyCliente);
-                  }}
-                >
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
-          <div className="list scroll">
-            {filteredClientes.map((c) => (
-              <div key={c.cliente_id} className="list-row">
-                <div>
-                  <strong>{c.nombre}</strong>
-                  <p className="muted">
-                    {c.email} · {c.genero || "?"} · {c.pais || "—"}
-                  </p>
-                </div>
-                <div className="row-actions">
-                  <button
-                    className="ghost"
-                    onClick={() => {
-                      setClienteEditId(c.cliente_id);
-                      setClienteForm({
-                        nombre: c.nombre || "",
-                        email: c.email || "",
-                        genero: c.genero || "",
-                        pais: c.pais || "",
-                      });
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button className="danger" onClick={() => deleteCliente(c.cliente_id)} disabled={busy}>
-                    Borrar
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!clientes.length && <p className="muted">No hay clientes.</p>}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-head">
-            <h2>Productos</h2>
-            <button className="ghost" onClick={() => loadProductos()} disabled={busy}>
-              ↻
-            </button>
-          </div>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <label>Buscar producto</label>
-            <input
-              placeholder="Nombre, categoría o SKU"
-              value={productoSearch}
-              onChange={(e) => setProductoSearch(e.target.value)}
-            />
-          </div>
-          <form className="form" onSubmit={saveProducto}>
-            <div className="row">
-              <label>Nombre</label>
-              <input
-                value={productoForm.nombre}
-                onChange={(e) => setProductoForm({ ...productoForm, nombre: e.target.value })}
-                required
-              />
-            </div>
-            <div className="row split">
-              <div>
-                <label>Categoria</label>
-                <input
-                  value={productoForm.categoria}
-                  onChange={(e) => setProductoForm({ ...productoForm, categoria: e.target.value })}
-                />
-              </div>
-              <div>
-                <label>SKU</label>
-                <input
-                  value={productoForm.sku}
-                  onChange={(e) => setProductoForm({ ...productoForm, sku: e.target.value })}
-                  placeholder="Opcional"
-                />
-              </div>
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={busy}>
-                {productoEditId ? "Actualizar" : "Crear"} producto
-              </button>
-              {productoEditId && (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => {
-                    setProductoEditId(null);
-                    setProductoForm(emptyProducto);
-                  }}
-                >
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
-          <div className="list scroll">
-            {filteredProductos.map((p) => (
-              <div key={p.producto_id} className="list-row">
-                <div>
-                  <strong>{p.nombre}</strong>
-                  <p className="muted">
-                    {p.categoria || "Sin categoría"} · {p.sku || "Sin SKU"}
-                  </p>
-                </div>
-                <div className="row-actions">
-                  <button
-                    className="ghost"
-                    onClick={() => {
-                      setProductoEditId(p.producto_id);
-                      setProductoForm({
-                        nombre: p.nombre || "",
-                        categoria: p.categoria || "",
-                        sku: p.sku || "",
-                      });
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button className="danger" onClick={() => deleteProducto(p.producto_id)} disabled={busy}>
-                    Borrar
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!productos.length && <p className="muted">No hay productos.</p>}
-          </div>
-        </div>
-      </section>
 
       <section className="card">
         <div className="card-head">
