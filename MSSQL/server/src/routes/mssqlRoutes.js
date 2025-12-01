@@ -167,7 +167,9 @@ router.get('/query/:table', async (req, res) => {
             });
         }
 
-        const query = `SELECT TOP 100 * FROM sales_ms.${tableName} ORDER BY id DESC`;
+        // Mapear tabla a su columna ID correspondiente
+        const idColumn = tableName === 'OrdenDetalle' ? 'OrdenDetalleId' : `${tableName}Id`;
+        const query = `SELECT TOP 100 * FROM sales_ms.${tableName} ORDER BY ${idColumn} DESC`;
         const result = await executeQuery(query);
 
         res.json({
