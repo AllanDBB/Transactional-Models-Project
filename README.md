@@ -58,6 +58,19 @@ select * from staging.supabase_products
 ```bash
 docker exec dwh-scheduler python transform_staging_to_dwh.py
 ```
+## Para probar
+```sql
+select * from dwh.DimCategory -- No sale nada
+select * from dwh.DimChannel
+select * from dwh.DimCustomer
+select * from dwh.DimExchangeRate
+select * from dwh.DimOrder -- No sale nada
+select * from dwh.DimProduct -- Al parecer hay una cosa raro con los de mongo
+select * from dwh.DimTime
+select * from dwh.FactSales
+select * from dwh.FactTargetSales -- No sale nada
+select * from dwh.MetasVentas -- No tiene nada / no debería tener nada
+```
 
 # 6 Carga de datos a DWH. ¿debería haber un MDM? (Load layer)
 
