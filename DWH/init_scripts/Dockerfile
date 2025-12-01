@@ -20,6 +20,12 @@ COPY shared/ /app/shared/
 # Copiar scripts de inicializacion
 COPY DWH/init_scripts/bccr_exchange_rate.py .
 COPY DWH/init_scripts/cargar_mapeo_productos_mysql.py .
+COPY DWH/init_scripts/db_utils.py .
+COPY DWH/init_scripts/etl_mongo.py .
+COPY DWH/init_scripts/etl_mssql_src.py .
+COPY DWH/init_scripts/etl_mysql.py .
+COPY DWH/init_scripts/etl_neo4j.py .
+COPY DWH/init_scripts/etl_supabase.py .
 COPY DWH/init_scripts/scheduler.py .
 
 # Copiar .env
@@ -43,9 +49,8 @@ CMD ["bash", "-c", "\
   echo; \
   echo 'Ejecutando poblacion historica de tipos de cambio...'; \
   python3 bccr_exchange_rate.py populate && echo '[OK] Poblacion historica completada'; \
-  echo; \
-  echo 'Ejecutando mapeo de productos MySQL...'; \
-  python3 cargar_mapeo_productos_mysql.py load && echo '[OK] Mapeo de productos completado'; \
+  echo 'Promoviendo staging a DWH...'; \
+  python3 -c \"from db_utils import execute_sp;\\ntry:\\n    execute_sp('sp_etl_run_all')\\n    print('sp_etl_run_all ejecutado')\\nexcept Exception as e:\\n    print('WARN: sp_etl_run_all fallo', e)\"; \
   echo; \
   echo 'Iniciando scheduler de actualizaciones diarias...'; \
   echo '==============================================================================='; \

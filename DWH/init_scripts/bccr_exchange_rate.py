@@ -205,7 +205,7 @@ WHEN NOT MATCHED THEN
 
     def promote_exchange_rates_to_dim(self):
         """
-        Copia/actualiza staging.tipo_cambio -> dwh.DimExchangeRate con MERGE.
+        Llama al SP en el DWH para promover staging.tipo_cambio -> dwh.DimExchangeRate.
         """
         connection = self.connect_to_database()
         if not connection:
@@ -213,24 +213,11 @@ WHEN NOT MATCHED THEN
 
         try:
             cursor = connection.cursor()
-            sql = """
-MERGE dwh.DimExchangeRate AS target
-USING (
-    SELECT fecha, de_moneda, a_moneda, tasa
-    FROM staging.tipo_cambio
-) AS src(fecha, de_moneda, a_moneda, tasa)
-ON target.date = src.fecha AND target.fromCurrency = src.de_moneda AND target.toCurrency = src.a_moneda
-WHEN MATCHED THEN
-    UPDATE SET rate = src.tasa
-WHEN NOT MATCHED THEN
-    INSERT (toCurrency, fromCurrency, date, rate)
-    VALUES (src.a_moneda, src.de_moneda, src.fecha, src.tasa);
-"""
-            cursor.execute(sql)
+            cursor.execute("EXEC dbo.sp_promote_exchange_rate;")
             connection.commit()
-            logging.info("DimExchangeRate actualizada desde staging.tipo_cambio")
+            logging.info("DimExchangeRate actualizada via sp_promote_exchange_rate")
         except Exception as e:
-            logging.error(f"Error promoviendo tipos de cambio a DimExchangeRate: {e}")
+            logging.error(f"Error ejecutando sp_promote_exchange_rate: {e}")
             connection.rollback()
         finally:
             connection.close()

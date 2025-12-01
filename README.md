@@ -20,4 +20,29 @@
 
 # 4 Carga de datos. 
 
-# 5 ETLS
+# 5 ETLS}
+
+
+
+
+
+Cómo probar end-to-end:
+
+Genera datos/landing: python shared/seed_all.py (opcional --push). #Check
+
+Rebuild y levanta DWH: cd DWH && docker-compose build --no-cache && docker-compose up -d. # Check
+Ejecuta ETLs en el scheduler (opcional manual): 
+docker exec dwh-scheduler python etl_mongo.py #Check
+docker exec dwh-scheduler python etl_mssql_src.py #Check
+docker exec dwh-scheduler python etl_mysql.py #Check
+docker exec dwh-scheduler python etl_supabase.py #Check
+docker exec dwh-scheduler python etl_neo4j.py # Tiene error
+
+
+Promoción: docker exec dwh-scheduler python bccr_exchange_rate.py populate y luego en SQL EXEC sp_etl_run_all;.
+Verifica en DWH:
+SELECT COUNT(*) FROM staging.mongo_orders; (9026)
+SELECT COUNT(*) FROM staging.mssql_products; (550)
+SELECT COUNT(*) FROM staging.mysql_products; (550)
+SELECT COUNT(*) FROM staging.supabase_users; (1120)
+SELECT COUNT(*) FROM dwh.DimExchangeRate; (una por día CRC→USD).

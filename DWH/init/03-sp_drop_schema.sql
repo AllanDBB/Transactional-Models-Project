@@ -97,6 +97,60 @@ BEGIN
             PRINT '[OK] staging.tipo_cambio eliminada';
         END
         
+        IF OBJECT_ID('staging.mongo_orders', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mongo_orders;
+            PRINT '[OK] staging.mongo_orders eliminada';
+        END
+        
+        IF OBJECT_ID('staging.mongo_customers', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mongo_customers;
+            PRINT '[OK] staging.mongo_customers eliminada';
+        END
+        
+        IF OBJECT_ID('staging.mssql_products', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mssql_products;
+            PRINT '[OK] staging.mssql_products eliminada';
+        END
+        
+        IF OBJECT_ID('staging.mssql_sales', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mssql_sales;
+            PRINT '[OK] staging.mssql_sales eliminada';
+        END
+        
+        IF OBJECT_ID('staging.mysql_products', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mysql_products;
+            PRINT '[OK] staging.mysql_products eliminada';
+        END
+        
+        IF OBJECT_ID('staging.mysql_sales', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.mysql_sales;
+            PRINT '[OK] staging.mysql_sales eliminada';
+        END
+        
+        IF OBJECT_ID('staging.neo4j_nodes', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.neo4j_nodes;
+            PRINT '[OK] staging.neo4j_nodes eliminada';
+        END
+        
+        IF OBJECT_ID('staging.neo4j_edges', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.neo4j_edges;
+            PRINT '[OK] staging.neo4j_edges eliminada';
+        END
+        
+        IF OBJECT_ID('staging.supabase_users', 'U') IS NOT NULL
+        BEGIN
+            DROP TABLE staging.supabase_users;
+            PRINT '[OK] staging.supabase_users eliminada';
+        END
+        
         IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL
         BEGIN
             DROP TABLE staging.map_producto;

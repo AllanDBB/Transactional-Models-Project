@@ -10,6 +10,8 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
+import os
+from db_utils import execute_sp
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +27,16 @@ logger = logging.getLogger(__name__)
 # Get the directory of this script
 SCRIPT_DIR = Path(__file__).parent
 BCCR_SCRIPT = SCRIPT_DIR / 'bccr_exchange_rate.py'
+ETL_SCRIPTS = [
+    SCRIPT_DIR / 'etl_mongo.py',
+    SCRIPT_DIR / 'etl_mssql_src.py',
+    SCRIPT_DIR / 'etl_mysql.py',
+    SCRIPT_DIR / 'etl_neo4j.py',
+    SCRIPT_DIR / 'etl_supabase.py',
+]
+
+# Stored procedure maestro (ejecutado via sqlcmd/pymssql)
+PROMOTE_SP = "sp_etl_run_all"
 
 
 def job():
@@ -52,10 +64,60 @@ def job():
         logger.error(f"Unexpected error during update: {str(e)}")
 
 
+def run_etl_scripts_once():
+    """Run all ETL scripts (extract->landing->staging) before scheduler loop."""
+    for script in ETL_SCRIPTS:
+        if not script.exists():
+            logger.warning(f"ETL script not found, skipping: {script}")
+            continue
+        logger.info(f"Running ETL script: {script.name}")
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(SCRIPT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        if result.returncode == 0:
+            logger.info(f"ETL {script.name} completed")
+            if result.stdout:
+                logger.debug(result.stdout)
+        else:
+            logger.error(f"ETL {script.name} failed with code {result.returncode}")
+            logger.error(result.stderr)
+
+    # Ejecutar SP maestro de promoción (si existe)
+    try:
+        logger.info("Executing promotion stored procedure sp_etl_run_all...")
+        execute_sp("sp_etl_run_all")
+        logger.info("sp_etl_run_all executed successfully")
+    except Exception as e:
+        logger.error(f"Error executing sp_etl_run_all: {e}")
+
+
 def main():
     """Main scheduler loop"""
     logger.info("BCCR Exchange Rate Scheduler started")
     logger.info("Schedule: Daily at 5:00 AM")
+
+    # Run ETLs once at startup (idempotent if no landing files)
+    run_etl_scripts_once()
+    # Run BCCR current update once
+    try:
+        result = subprocess.run(
+            [sys.executable, str(BCCR_SCRIPT), 'update-current'],
+            cwd=str(SCRIPT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        if result.returncode == 0:
+            logger.info("Initial exchange rate update completed successfully")
+        else:
+            logger.error(f"Initial exchange rate update failed with code {result.returncode}")
+            logger.error(f"Error: {result.stderr}")
+    except Exception as e:
+        logger.error(f"Unexpected error during initial update: {str(e)}")
     
     # Schedule the job to run daily at 5:00 AM
     schedule.every().day.at("05:00").do(job)

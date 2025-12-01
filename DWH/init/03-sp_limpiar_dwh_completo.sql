@@ -38,6 +38,15 @@ BEGIN
         IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL DELETE FROM staging.source_tracking;
         IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL DELETE FROM staging.map_producto;
         IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL DELETE FROM staging.tipo_cambio;
+        IF OBJECT_ID('staging.mongo_orders', 'U') IS NOT NULL DELETE FROM staging.mongo_orders;
+        IF OBJECT_ID('staging.mongo_customers', 'U') IS NOT NULL DELETE FROM staging.mongo_customers;
+        IF OBJECT_ID('staging.mssql_products', 'U') IS NOT NULL DELETE FROM staging.mssql_products;
+        IF OBJECT_ID('staging.mssql_sales', 'U') IS NOT NULL DELETE FROM staging.mssql_sales;
+        IF OBJECT_ID('staging.mysql_products', 'U') IS NOT NULL DELETE FROM staging.mysql_products;
+        IF OBJECT_ID('staging.mysql_sales', 'U') IS NOT NULL DELETE FROM staging.mysql_sales;
+        IF OBJECT_ID('staging.neo4j_nodes', 'U') IS NOT NULL DELETE FROM staging.neo4j_nodes;
+        IF OBJECT_ID('staging.neo4j_edges', 'U') IS NOT NULL DELETE FROM staging.neo4j_edges;
+        IF OBJECT_ID('staging.supabase_users', 'U') IS NOT NULL DELETE FROM staging.supabase_users;
         
         -- Resetear identidades (solo si existen)
         IF OBJECT_ID('dwh.DimCategory', 'U') IS NOT NULL DBCC CHECKIDENT ('dwh.DimCategory', RESEED, 0);
@@ -53,6 +62,15 @@ BEGIN
         IF OBJECT_ID('staging.source_tracking', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.source_tracking', RESEED, 0);
         IF OBJECT_ID('staging.map_producto', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.map_producto', RESEED, 0);
         IF OBJECT_ID('staging.tipo_cambio', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.tipo_cambio', RESEED, 0);
+        IF OBJECT_ID('staging.mongo_orders', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mongo_orders', RESEED, 0);
+        IF OBJECT_ID('staging.mongo_customers', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mongo_customers', RESEED, 0);
+        IF OBJECT_ID('staging.mssql_products', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mssql_products', RESEED, 0);
+        IF OBJECT_ID('staging.mssql_sales', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mssql_sales', RESEED, 0);
+        IF OBJECT_ID('staging.mysql_products', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mysql_products', RESEED, 0);
+        IF OBJECT_ID('staging.mysql_sales', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.mysql_sales', RESEED, 0);
+        IF OBJECT_ID('staging.neo4j_nodes', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.neo4j_nodes', RESEED, 0);
+        IF OBJECT_ID('staging.neo4j_edges', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.neo4j_edges', RESEED, 0);
+        IF OBJECT_ID('staging.supabase_users', 'U') IS NOT NULL DBCC CHECKIDENT ('staging.supabase_users', RESEED, 0);
         
         COMMIT TRANSACTION;
         
