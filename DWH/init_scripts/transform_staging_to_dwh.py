@@ -84,30 +84,29 @@ def transform_staging_to_dwh():
                     created_at_src
                 FROM (
                     SELECT name, email, gender, country, created_at_src,
-                           ROW_NUMBER() OVER (PARTITION BY email ORDER BY staging_id) as rn
-                    FROM staging.mssql_customers
-                    UNION ALL
-                    SELECT nombre as name, correo as email, genero as gender, pais as country, created_at_src,
-                           ROW_NUMBER() OVER (PARTITION BY correo ORDER BY staging_id) as rn
-                    FROM staging.mysql_customers
-                    UNION ALL
-                    SELECT name, email, genero as gender, NULL as country, NULL as created_at_src,
-                           ROW_NUMBER() OVER (PARTITION BY email ORDER BY staging_id) as rn
-                    FROM staging.mongo_customers
-                    UNION ALL
-                    SELECT name, email, gender, country, created_at_src,
-                           ROW_NUMBER() OVER (PARTITION BY email ORDER BY staging_id) as rn
-                    FROM staging.supabase_users
-                    UNION ALL
-                    SELECT 
-                        JSON_VALUE(props_json, '$.nombre') as name,
-                        JSON_VALUE(props_json, '$.email') as email,
-                        JSON_VALUE(props_json, '$.genero') as gender,
-                        JSON_VALUE(props_json, '$.pais') as country,
-                        NULL as created_at_src,
-                        ROW_NUMBER() OVER (PARTITION BY JSON_VALUE(props_json, '$.email') ORDER BY staging_id) as rn
-                    FROM staging.neo4j_nodes
-                    WHERE node_label = 'Cliente' AND JSON_VALUE(props_json, '$.email') IS NOT NULL
+                           ROW_NUMBER() OVER (PARTITION BY email ORDER BY created_at_src DESC, name) as rn
+                    FROM (
+                        SELECT name, email, gender, country, created_at_src
+                        FROM staging.mssql_customers
+                        UNION ALL
+                        SELECT nombre as name, correo as email, genero as gender, pais as country, created_at_src
+                        FROM staging.mysql_customers
+                        UNION ALL
+                        SELECT name, email, genero as gender, NULL as country, NULL as created_at_src
+                        FROM staging.mongo_customers
+                        UNION ALL
+                        SELECT name, email, gender, country, created_at_src
+                        FROM staging.supabase_users
+                        UNION ALL
+                        SELECT 
+                            JSON_VALUE(props_json, '$.nombre') as name,
+                            JSON_VALUE(props_json, '$.email') as email,
+                            JSON_VALUE(props_json, '$.genero') as gender,
+                            JSON_VALUE(props_json, '$.pais') as country,
+                            NULL as created_at_src
+                        FROM staging.neo4j_nodes
+                        WHERE node_label = 'Cliente' AND JSON_VALUE(props_json, '$.email') IS NOT NULL
+                    ) all_sources
                 ) unified
                 WHERE rn = 1 AND email IS NOT NULL
             """)
