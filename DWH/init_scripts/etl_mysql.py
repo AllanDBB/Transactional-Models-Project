@@ -34,7 +34,7 @@ def load_products():
     rows = []
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, codigo_alt, nombre, categoria, NULL AS precio FROM Producto")
+            cur.execute("SELECT id, codigo_alt, nombre, categoria FROM Producto")
             for r in cur.fetchall():
                 rows.append(
                     (
@@ -44,7 +44,7 @@ def load_products():
                         r["codigo_alt"],
                         r["nombre"],
                         r["categoria"],
-                        r["precio"],
+                        None,  # MySQL no tiene precio en Producto
                         None,
                     )
                 )

@@ -1,10 +1,9 @@
 # 1 Levantar contenedor el DWH
-    1.1 - Crear schema
+    - docker compose down -v
+    - docker compose build --no-cache
+    - docker compose up -d
 
-# 2 Levantar el contenedor BCCR
-    2.2 - docker exec bccr-scheduler python3 bccr_exchange_rate.py populate
-
-# 3 Leventar bases de datos.
+# 2 Leventar bases de datos.
     3.1 - Levantar MYSQL:
         cd MYSQL; docker compose up -d --build
     3.2 - Levantar MSSQL: 
@@ -18,31 +17,46 @@
     3.5 - Levantar Neo4J:
         cd NEO4J; npm  i, npm run dev (Revisar que la web no este caido el contenedor)
 
-# 4 Carga de datos. 
+# 3 Carga de datos.
+    3.1 - Para cargar datos de SQL ir al website y clic en cargar datos
+    3.2 - Para cargar datos de Mongo, Supa, Neo4; shared/load_ ejecutarlos
 
-# 5 ETLS}
+# 4 Extract Layer. Carga de datos hacia el staging 
+    4.1 - docker exec dwh-scheduler python etl_mssql_src.py; 
+    4.2 - docker exec dwh-scheduler python etl_mysql.py; 
+    4.3 - docker exec dwh-scheduler python etl_mongo.py; 
+    4.4 - docker exec dwh-scheduler python etl_neo4j.py; 
+    4.5 - docker exec dwh-scheduler python etl_supabase.py
 
+## Para probar utilizar:
+``` sql
+select * from staging.mongo_orders
+select * from staging.mongo_customers
+select * from staging.mongo_order_items
 
+select * from staging.mssql_customers
+select * from staging.mssql_products
+select * from staging.mssql_sales
 
+select * from staging.mysql_sales
+select * from staging.mysql_customers
+select * from staging.mysql_products
 
+select * from staging.neo4j_edges
+select * from staging.neo4j_nodes
+select * from staging.neo4j_order_items
 
-Cómo probar end-to-end:
+select * from staging.supabase_order_items
+select * from staging.supabase_orders
+select * from staging.supabase_users
+```
 
-Genera datos/landing: python shared/seed_all.py (opcional --push). #Check
+# 5 (Transform layer)
 
-Rebuild y levanta DWH: cd DWH && docker-compose build --no-cache && docker-compose up -d. # Check
-Ejecuta ETLs en el scheduler (opcional manual): 
-docker exec dwh-scheduler python etl_mongo.py #Check
-docker exec dwh-scheduler python etl_mssql_src.py #Check
-docker exec dwh-scheduler python etl_mysql.py #Check
-docker exec dwh-scheduler python etl_supabase.py #Check
-docker exec dwh-scheduler python etl_neo4j.py # Tiene error
+# 6 Carga de datos a DWH. ¿debería haber un MDM? (Load layer)
 
+# 7 Pruebas unitarias a websites.
 
-Promoción: docker exec dwh-scheduler python bccr_exchange_rate.py populate y luego en SQL EXEC sp_etl_run_all;.
-Verifica en DWH:
-SELECT COUNT(*) FROM staging.mongo_orders; (9026)
-SELECT COUNT(*) FROM staging.mssql_products; (550)
-SELECT COUNT(*) FROM staging.mysql_products; (550)
-SELECT COUNT(*) FROM staging.supabase_users; (1120)
-SELECT COUNT(*) FROM dwh.DimExchangeRate; (una por día CRC→USD).
+# 8 Aprori
+
+# 9 PowerBi

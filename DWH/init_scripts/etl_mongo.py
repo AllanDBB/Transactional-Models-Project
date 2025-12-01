@@ -86,15 +86,25 @@ def load_order_items():
             for order_key, doc in orders.items():
                 items = doc.get("items", [])
                 for idx, item in enumerate(items):
+                    # Extraer producto_id de diferentes lugares
+                    producto_id = item.get("producto_id")
+                    if not producto_id:
+                        # Si está en equivalencias dict
+                        equiv = item.get("equivalencias", {})
+                        if isinstance(equiv, dict):
+                            producto_id = equiv.get("sku") or equiv.get("alt")
+                        else:
+                            producto_id = item.get("sku")
+                    
                     rows.append(
                         (
                             "MongoDB",
                             f"{order_key}-{idx}",
-                            order_key,
-                            item.get("producto_id") or item.get("sku"),
+                            str(order_key),
+                            str(producto_id) if producto_id else None,
                             item.get("descripcion"),
-                            item.get("cantidad"),
-                            item.get("precio_unit"),
+                            float(item.get("cantidad", 0)),
+                            float(item.get("precio_unit", 0)),
                             doc.get("moneda") or "CRC",
                             parse_date(doc.get("fecha")),
                             None,
@@ -132,7 +142,7 @@ def load_customers():
                     str(doc.get("_id")) or doc.get("cliente_id"),
                     doc.get("nombre"),
                     doc.get("email"),
-                    doc.get("genero"),  # 'Masculino', 'Femenino', 'Otro'
+                    doc.get("genero"),
                     None,
                 )
             )
