@@ -73,12 +73,26 @@ def load_nodes_and_edges():
                     json.dumps(serialize_neo4j_value(dict(r["props"]))),
                 )
             )
+        # Categorias
+        result = session.run("MATCH (c:Categoria) RETURN labels(c) AS lbls, c.nombre AS id, properties(c) AS props")
+        for r in result:
+            nodes.append(
+                (
+                    "NEO4J",
+                    ",".join(r["lbls"]),
+                    r["id"],
+                    json.dumps(serialize_neo4j_value(dict(r["props"]))),
+                )
+            )
         # Relaciones
         result = session.run(
             """
             MATCH (a)-[r]->(b)
-            WHERE a.id IS NOT NULL AND b.id IS NOT NULL
-            RETURN type(r) AS type, labels(a) AS from_lbls, a.id AS from_id, labels(b) AS to_lbls, b.id AS to_id, properties(r) AS props
+            RETURN type(r) AS type, labels(a) AS from_lbls, 
+                   COALESCE(a.id, a.nombre) AS from_id, 
+                   labels(b) AS to_lbls, 
+                   COALESCE(b.id, b.nombre) AS to_id, 
+                   properties(r) AS props
             """
         )
         for r in result:

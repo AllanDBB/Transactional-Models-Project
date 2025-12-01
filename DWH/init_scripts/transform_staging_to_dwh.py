@@ -98,6 +98,16 @@ def transform_staging_to_dwh():
                     SELECT name, email, gender, country, created_at_src,
                            ROW_NUMBER() OVER (PARTITION BY email ORDER BY staging_id) as rn
                     FROM staging.supabase_users
+                    UNION ALL
+                    SELECT 
+                        JSON_VALUE(props_json, '$.nombre') as name,
+                        JSON_VALUE(props_json, '$.email') as email,
+                        JSON_VALUE(props_json, '$.genero') as gender,
+                        JSON_VALUE(props_json, '$.pais') as country,
+                        NULL as created_at_src,
+                        ROW_NUMBER() OVER (PARTITION BY JSON_VALUE(props_json, '$.email') ORDER BY staging_id) as rn
+                    FROM staging.neo4j_nodes
+                    WHERE node_label = 'Cliente' AND JSON_VALUE(props_json, '$.email') IS NOT NULL
                 ) unified
                 WHERE rn = 1 AND email IS NOT NULL
             """)
@@ -119,10 +129,10 @@ def transform_staging_to_dwh():
                     UNION
                     SELECT category FROM staging.supabase_products WHERE category IS NOT NULL
                     UNION
-                    SELECT JSON_VALUE(props_json, '$.categoria') 
+                    SELECT JSON_VALUE(props_json, '$.nombre') 
                     FROM staging.neo4j_nodes 
-                    WHERE node_label = 'Producto' 
-                      AND JSON_VALUE(props_json, '$.categoria') IS NOT NULL
+                    WHERE node_label = 'Categoria' 
+                      AND JSON_VALUE(props_json, '$.nombre') IS NOT NULL
                 ) categories
                 WHERE category IS NOT NULL AND LEN(LTRIM(RTRIM(category))) > 0
                 ORDER BY category
@@ -158,13 +168,17 @@ def transform_staging_to_dwh():
                     FROM staging.mongo_products
                     WHERE nombre IS NOT NULL AND codigo_mongo IS NOT NULL
                     UNION ALL
-                    -- Neo4j products
+                    -- Neo4j products (categoría desde relación PERTENECE_A)
                     SELECT 
-                        JSON_VALUE(props_json, '$.nombre') as name,
-                        node_key as code,
-                        JSON_VALUE(props_json, '$.categoria') as category
-                    FROM staging.neo4j_nodes
-                    WHERE node_label = 'Producto' AND JSON_VALUE(props_json, '$.nombre') IS NOT NULL
+                        JSON_VALUE(n.props_json, '$.nombre') as name,
+                        n.node_key as code,
+                        e.to_key as category
+                    FROM staging.neo4j_nodes n
+                    LEFT JOIN staging.neo4j_edges e 
+                        ON e.edge_type = 'PERTENECE_A' 
+                        AND e.from_label = 'Producto' 
+                        AND e.from_key = n.node_key
+                    WHERE n.node_label = 'Producto' AND JSON_VALUE(n.props_json, '$.nombre') IS NOT NULL
                 ) p
                 LEFT JOIN dwh.DimCategory c ON c.name = p.category
                 WHERE p.name IS NOT NULL AND p.code IS NOT NULL
