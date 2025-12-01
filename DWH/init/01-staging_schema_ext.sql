@@ -76,6 +76,27 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID('staging.mongo_products', 'U') IS NULL
+BEGIN
+    CREATE TABLE staging.mongo_products (
+        staging_id     INT IDENTITY(1,1) PRIMARY KEY,
+        source_system  NVARCHAR(50) NOT NULL DEFAULT 'MongoDB',
+        source_key     NVARCHAR(200) NOT NULL, -- _id o codigo_mongo
+        codigo_mongo   NVARCHAR(100) NULL,
+        nombre         NVARCHAR(200) NULL,
+        categoria      NVARCHAR(100) NULL,
+        sku_equiv      NVARCHAR(100) NULL, -- equivalencias.sku
+        alt_equiv      NVARCHAR(100) NULL, -- equivalencias.alt
+        payload_json   NVARCHAR(MAX) NULL,
+        created_at     DATETIME DEFAULT GETDATE(),
+        fecha_carga    DATETIME DEFAULT GETDATE(),
+        estado         NVARCHAR(20) DEFAULT 'ACTIVO',
+        CONSTRAINT uq_mongo_products UNIQUE (source_system, source_key)
+    );
+    CREATE INDEX ix_mongo_products_codigo ON staging.mongo_products(codigo_mongo);
+END
+GO
+
 -- ====================== MSSQL (fuente transaccional) =========================
 IF OBJECT_ID('staging.mssql_customers', 'U') IS NULL
 BEGIN

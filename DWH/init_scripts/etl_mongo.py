@@ -61,19 +61,32 @@ def load_order_items():
     with get_client() as client:
         db = client.get_default_database()
         orders = {str(o.get("_id")) or o.get("orden_id"): o for o in db.get_collection("ordens").find({})}
+        
+        # Cargar productos para hacer lookup
+        productos = {}
+        try:
+            for p in db.get_collection("productos").find({}):
+                producto_id = str(p.get("_id"))
+                productos[producto_id] = p.get("nombre") or p.get("name") or "Unknown Product"
+        except Exception:
+            LOG.warning("No se pudo cargar colección productos")
+        
         coll_items = db.get_collection("orden_items")
         rows = []
 
         if coll_items.count_documents({}) > 0:
             for doc in coll_items.find({}):
                 order_key = doc.get("orden_id") or doc.get("order_id")
+                producto_id = doc.get("producto_id")
+                product_desc = productos.get(str(producto_id)) if producto_id else None
+                
                 rows.append(
                     (
                         "MongoDB",
                         f"{order_key}-{doc.get('producto_id')}",
                         order_key,
-                        doc.get("producto_id"),
-                        None,
+                        producto_id,
+                        product_desc,
                         doc.get("cantidad"),
                         doc.get("precio_unit"),
                         (orders.get(order_key, {}).get("moneda") if order_key in orders else None) or doc.get("moneda") or "CRC",
@@ -153,9 +166,37 @@ def load_customers():
         )
 
 
+def load_products():
+    clear_table("staging.mongo_products")
+    with get_client() as client:
+        db = client.get_default_database()
+        productos = db.get_collection("productos")
+        rows = []
+        for doc in productos.find({}):
+            equiv = doc.get("equivalencias", {})
+            rows.append(
+                (
+                    "MongoDB",
+                    str(doc.get("_id")),
+                    doc.get("codigo_mongo"),
+                    doc.get("nombre"),
+                    doc.get("categoria"),
+                    equiv.get("sku") if isinstance(equiv, dict) else None,
+                    equiv.get("alt") if isinstance(equiv, dict) else None,
+                    None,
+                )
+            )
+        executemany_chunks(
+            "staging.mongo_products",
+            ["source_system", "source_key", "codigo_mongo", "nombre", "categoria", "sku_equiv", "alt_equiv", "payload_json"],
+            rows,
+        )
+
+
 def main():
     load_orders()
     load_customers()
+    load_products()
     load_order_items()
 
 
