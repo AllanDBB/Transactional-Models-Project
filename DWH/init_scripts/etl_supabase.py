@@ -47,8 +47,8 @@ def load_clientes():
                 (
                     "SUPABASE",
                     str(r["cliente_id"]),
-                    r["nombre"],
                     r["email"],
+                    r["nombre"],
                     r.get("genero", ""),
                     r.get("pais", ""),
                     parse_dt(r.get("fecha_registro")),
@@ -62,7 +62,7 @@ def load_clientes():
     
     executemany_chunks(
         "staging.supabase_users",
-        ["source_system", "source_key", "name", "email", "gender", "country", "created_at_src", "payload_json"],
+        ["source_system", "source_key", "email", "name", "gender", "country", "created_at_src", "payload_json"],
         rows,
         chunk_size=5000,
     )

@@ -280,6 +280,7 @@ BEGIN
         source_key     NVARCHAR(200) NOT NULL, -- uuid
         email          NVARCHAR(200) NULL,
         name           NVARCHAR(200) NULL,
+        gender         NVARCHAR(10) NULL,
         country        NVARCHAR(100) NULL,
         created_at_src DATETIME NULL,
         payload_json   NVARCHAR(MAX) NULL,

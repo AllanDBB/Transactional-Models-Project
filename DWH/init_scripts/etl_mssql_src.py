@@ -34,13 +34,13 @@ def load_products():
     rows = []
     with get_conn() as conn:
         cur = conn.cursor(as_dict=True)
-        cur.execute("SELECT SKU, Nombre, Categoria, ProductoId AS source_key, 0.0 AS price FROM sales_ms.Producto")
+        cur.execute("SELECT SKU AS source_key, Nombre, Categoria, 0.0 AS price FROM sales_ms.Producto")
         for r in cur.fetchall():
             rows.append(
                 (
                     "MSSQL_SRC",
                     r["source_key"],
-                    r["SKU"],
+                    r["source_key"],  # code = SKU también
                     r["Nombre"],
                     r["Categoria"],
                     r.get("price"),

@@ -26,6 +26,7 @@ COPY DWH/init_scripts/etl_mssql_src.py .
 COPY DWH/init_scripts/etl_mysql.py .
 COPY DWH/init_scripts/etl_neo4j.py .
 COPY DWH/init_scripts/etl_supabase.py .
+COPY DWH/init_scripts/transform_staging_to_dwh.py .
 COPY DWH/init_scripts/scheduler.py .
 
 # Copiar .env

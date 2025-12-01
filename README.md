@@ -49,14 +49,20 @@ select * from staging.neo4j_order_items
 select * from staging.supabase_order_items
 select * from staging.supabase_orders
 select * from staging.supabase_users
+select * from staging.supabase_products
 ```
 
-# 5 (Transform layer)
+# 5 Transform Layer - Consolidación y Limpieza de Datos
+
+## Ejecutar transformación completa (staging → dwh):
+```bash
+docker exec dwh-scheduler python transform_staging_to_dwh.py
+```
 
 # 6 Carga de datos a DWH. ¿debería haber un MDM? (Load layer)
 
 # 7 Pruebas unitarias a websites.
 
-# 8 Aprori
+# 8 Apriori - Reglas de Asociación de Productos
 
-# 9 PowerBi
+# 9 Powerbgay
