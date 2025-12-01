@@ -65,7 +65,7 @@ BEGIN
         source_key     NVARCHAR(200) NOT NULL, -- _id de Mongo
         name           NVARCHAR(200) NULL,
         email          NVARCHAR(200) NULL,
-        country        NVARCHAR(100) NULL,
+        genero         NVARCHAR(20) NULL, -- 'Masculino', 'Femenino', 'Otro'
         payload_json   NVARCHAR(MAX) NULL,
         created_at     DATETIME DEFAULT GETDATE(),
         fecha_carga    DATETIME DEFAULT GETDATE(),
@@ -332,5 +332,29 @@ BEGIN
         CONSTRAINT uq_supabase_order_items UNIQUE (source_system, source_key)
     );
     CREATE INDEX ix_supabase_order_items_order ON staging.supabase_order_items(order_key);
+END
+GO
+
+IF OBJECT_ID('staging.supabase_products', 'U') IS NULL
+BEGIN
+    CREATE TABLE staging.supabase_products (
+        staging_id     INT IDENTITY(1,1) PRIMARY KEY,
+        source_system  NVARCHAR(50) NOT NULL DEFAULT 'SUPABASE',
+        source_key     NVARCHAR(200) NOT NULL, -- uuid
+        name           NVARCHAR(200) NULL,
+        description    NVARCHAR(MAX) NULL,
+        category       NVARCHAR(100) NULL,
+        price          DECIMAL(18,2) NULL,
+        stock          INT NULL,
+        supplier_id    NVARCHAR(200) NULL,
+        active         BIT NULL,
+        created_at_src DATETIME NULL,
+        payload_json   NVARCHAR(MAX) NULL,
+        created_at     DATETIME DEFAULT GETDATE(),
+        fecha_carga    DATETIME DEFAULT GETDATE(),
+        estado         NVARCHAR(20) DEFAULT 'ACTIVO',
+        CONSTRAINT uq_supabase_products UNIQUE (source_system, source_key)
+    );
+    CREATE INDEX ix_supabase_products_category ON staging.supabase_products(category);
 END
 GO

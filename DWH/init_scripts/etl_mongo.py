@@ -132,13 +132,13 @@ def load_customers():
                     str(doc.get("_id")) or doc.get("cliente_id"),
                     doc.get("nombre"),
                     doc.get("email"),
-                    doc.get("pais"),
+                    doc.get("genero"),  # 'Masculino', 'Femenino', 'Otro'
                     None,
                 )
             )
         executemany_chunks(
             "staging.mongo_customers",
-            ["source_system", "source_key", "name", "email", "country", "payload_json"],
+            ["source_system", "source_key", "name", "email", "genero", "payload_json"],
             rows,
         )
 

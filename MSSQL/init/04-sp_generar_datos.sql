@@ -41,7 +41,7 @@ BEGIN
         ('Octavio Paniagua', 'Masculino'), ('Valentina Soto', 'Femenino'), ('Gustavo Benavides', 'Masculino'),
         ('Adriana Salazar', 'Femenino'), ('Leopoldo Cordero', 'Masculino'), ('Pilar González', 'Femenino');
 
-        -- Generar 600 clientes reutilizando los 42 nombres (42 × 15 = 630, usamos 600)
+        -- Generar 1000 clientes reutilizando los 42 nombres (42 × 24 = 1008, usamos 1000)
         ;WITH NumberSequence AS (
             SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Num
             FROM (
@@ -53,7 +53,7 @@ BEGIN
             (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
              UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t3,
             (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
-             UNION ALL SELECT 6) t4
+             UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t4
         )
         INSERT INTO sales_ms.Cliente (Nombre, Email, Genero, Pais, FechaRegistro)
         SELECT 
@@ -61,16 +61,16 @@ BEGIN
             LOWER(REPLACE(N.Nombre, ' ', '.')) + CAST(Num AS NVARCHAR(10)) + '@example.com',
             N.Genero,
             CASE WHEN Num % 3 = 0 THEN 'Panamá' WHEN Num % 3 = 1 THEN 'Nicaragua' ELSE 'Costa Rica' END,
-            DATEADD(DAY, -(ABS(CHECKSUM(Num)) % 365), CAST(GETDATE() AS DATE))
+            DATEADD(DAY, -(ABS(CHECKSUM(Num)) % 730), CAST(GETDATE() AS DATE))
         FROM NumberSequence
         CROSS APPLY (
             SELECT Nombre, Genero 
             FROM @NombresBase 
             WHERE RowNum = ((Num - 1) % 42) + 1
         ) N
-        WHERE Num <= 600;
+        WHERE Num <= 1000;
 
-        -- Insertar 5000 productos con categorías variadas
+        -- Insertar 200 productos con categorías variadas (solapamiento con otras fuentes)
         ;WITH ProductoNumbers AS (
             SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Num
             FROM (
@@ -80,14 +80,11 @@ BEGIN
             (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
              UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t2,
             (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
-             UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t3,
-            (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
-             UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t4,
-            (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) t5
+             UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t3
         )
         INSERT INTO sales_ms.Producto (SKU, Nombre, Categoria)
         SELECT 
-            FORMAT(Num, '00000'),
+            'MSSQL-' + FORMAT(Num, '00000'),
             CASE 
                 WHEN Num % 5 = 0 THEN 'Laptop Pro ' + CAST(Num AS NVARCHAR(10))
                 WHEN Num % 5 = 1 THEN 'Monitor 27" ' + CAST(Num AS NVARCHAR(10))
@@ -103,7 +100,7 @@ BEGIN
                 ELSE 'Accesorios'
             END
         FROM ProductoNumbers
-        WHERE Num <= 5000;
+        WHERE Num <= 200;
 
         -- Variables para control
         DECLARE @OrdenActual INT = 1;
@@ -132,7 +129,7 @@ BEGIN
             Total DECIMAL(18,2)
         );
 
-        -- Generar 5000 órdenes (10 × 10 × 10 × 5 = 5000)
+        -- Generar 8000 órdenes (10 × 10 × 10 × 8 = 8000) - mezcla 2024 y 2025
         ;WITH OrderNumbers AS (
             SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Num
             FROM (
@@ -143,16 +140,17 @@ BEGIN
              UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t2,
             (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
              UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10) t3,
-            (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) t4
+            (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+             UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8) t4
         )
         INSERT INTO @OrdenesTmp
         SELECT 
             (Num % @MaxClientes) + 1 AS ClienteId,
-            DATEADD(DAY, -(ABS(CHECKSUM(Num)) % 680), CAST(GETDATE() AS DATE)) AS Fecha,
+            DATEADD(DAY, -(ABS(CHECKSUM(Num)) % 730), CAST(GETDATE() AS DATE)) AS Fecha,
             CASE WHEN (Num % 3) = 0 THEN 'WEB' WHEN (Num % 3) = 1 THEN 'TIENDA' ELSE 'APP' END AS Canal,
             CAST(ABS(CHECKSUM(Num)) % 5000 * 0.01 AS DECIMAL(18,2)) + 10 AS Total
         FROM OrderNumbers
-        WHERE Num <= 5000;
+        WHERE Num <= 8000;
 
         -- Insertar órdenes
         INSERT INTO sales_ms.Orden (ClienteId, Fecha, Canal, Moneda, Total)

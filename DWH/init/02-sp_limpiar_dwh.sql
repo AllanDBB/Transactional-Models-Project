@@ -37,17 +37,28 @@ BEGIN
         -- Limpiar staging
         DELETE FROM staging.source_tracking;
         DELETE FROM staging.map_producto;
-        DELETE FROM staging.tipo_cambio; -- opcional si se desea limpiar FX staging
+        -- MongoDB
         DELETE FROM staging.mongo_orders;
+        DELETE FROM staging.mongo_order_items;
         DELETE FROM staging.mongo_customers;
+        -- MSSQL Source
+        DELETE FROM staging.mssql_customers;
         DELETE FROM staging.mssql_products;
         DELETE FROM staging.mssql_sales;
+        -- MySQL
+        DELETE FROM staging.mysql_customers;
         DELETE FROM staging.mysql_products;
         DELETE FROM staging.mysql_sales;
+        -- Neo4j
         DELETE FROM staging.neo4j_nodes;
         DELETE FROM staging.neo4j_edges;
+        DELETE FROM staging.neo4j_order_items;
+        -- Supabase
         DELETE FROM staging.supabase_users;
-        -- NO limpiamos staging.tipo_cambio (datos del BCCR)
+        DELETE FROM staging.supabase_products;
+        DELETE FROM staging.supabase_orders;
+        DELETE FROM staging.supabase_order_items;
+        -- NO limpiamos staging.tipo_cambio (datos del BCCR preservados)
         
         -- Resetear identidades (DimTime no tiene IDENTITY)
         DBCC CHECKIDENT ('dwh.DimCategory', RESEED, 0);
@@ -61,15 +72,27 @@ BEGIN
         DBCC CHECKIDENT ('staging.source_tracking', RESEED, 0);
         DBCC CHECKIDENT ('staging.map_producto', RESEED, 0);
         DBCC CHECKIDENT ('staging.tipo_cambio', RESEED, 0);
+        -- MongoDB
         DBCC CHECKIDENT ('staging.mongo_orders', RESEED, 0);
+        DBCC CHECKIDENT ('staging.mongo_order_items', RESEED, 0);
         DBCC CHECKIDENT ('staging.mongo_customers', RESEED, 0);
+        -- MSSQL Source
+        DBCC CHECKIDENT ('staging.mssql_customers', RESEED, 0);
         DBCC CHECKIDENT ('staging.mssql_products', RESEED, 0);
         DBCC CHECKIDENT ('staging.mssql_sales', RESEED, 0);
+        -- MySQL
+        DBCC CHECKIDENT ('staging.mysql_customers', RESEED, 0);
         DBCC CHECKIDENT ('staging.mysql_products', RESEED, 0);
         DBCC CHECKIDENT ('staging.mysql_sales', RESEED, 0);
+        -- Neo4j
         DBCC CHECKIDENT ('staging.neo4j_nodes', RESEED, 0);
         DBCC CHECKIDENT ('staging.neo4j_edges', RESEED, 0);
+        DBCC CHECKIDENT ('staging.neo4j_order_items', RESEED, 0);
+        -- Supabase
         DBCC CHECKIDENT ('staging.supabase_users', RESEED, 0);
+        DBCC CHECKIDENT ('staging.supabase_products', RESEED, 0);
+        DBCC CHECKIDENT ('staging.supabase_orders', RESEED, 0);
+        DBCC CHECKIDENT ('staging.supabase_order_items', RESEED, 0);
         
         COMMIT TRANSACTION;
         

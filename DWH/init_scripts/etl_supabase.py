@@ -150,8 +150,64 @@ def load_order_items():
     )
 
 
+def load_products():
+    clear_table("staging.supabase_products")
+    rows = []
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            """
+            SELECT id,
+                   name,
+                   description,
+                   category,
+                   price,
+                   stock,
+                   supplier_id,
+                   active,
+                   created_at
+            FROM products
+            """
+        )
+        for r in cur.fetchall():
+            rows.append(
+                (
+                    "SUPABASE",
+                    str(r["id"]),
+                    r["name"],
+                    r["description"],
+                    r["category"],
+                    r["price"],
+                    r["stock"],
+                    str(r["supplier_id"]) if r["supplier_id"] else None,
+                    r["active"],
+                    parse_dt(r["created_at"]),
+                    None,
+                )
+            )
+    executemany_chunks(
+        "staging.supabase_products",
+        [
+            "source_system",
+            "source_key",
+            "name",
+            "description",
+            "category",
+            "price",
+            "stock",
+            "supplier_id",
+            "active",
+            "created_at_src",
+            "payload_json",
+        ],
+        rows,
+        chunk_size=5000,
+    )
+
+
 def main():
     load_users()
+    load_products()
     load_orders()
     load_order_items()
 

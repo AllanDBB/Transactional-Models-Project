@@ -38,21 +38,17 @@ RUN mkdir -p /app/logs
 ENV TZ=America/Costa_Rica
 ENV PYTHONUNBUFFERED=1
 
-# Ejecutar inicializacion y luego el scheduler
+# Solo ejecutar scheduler (NO ETLs, NO populate, base limpia)
 CMD ["bash", "-c", "\
   set -e; \
   echo '==============================================================================='; \
-  echo 'Iniciando DWH Initialization & Scheduler'; \
+  echo 'Iniciando BCCR Exchange Rate Scheduler'; \
   echo '==============================================================================='; \
   echo 'Esperando a que SQL Server este disponible...'; \
   sleep 10; \
   echo; \
-  echo 'Ejecutando poblacion historica de tipos de cambio...'; \
-  python3 bccr_exchange_rate.py populate && echo '[OK] Poblacion historica completada'; \
-  echo 'Promoviendo staging a DWH...'; \
-  python3 -c \"from db_utils import execute_sp;\\ntry:\\n    execute_sp('sp_etl_run_all')\\n    print('sp_etl_run_all ejecutado')\\nexcept Exception as e:\\n    print('WARN: sp_etl_run_all fallo', e)\"; \
-  echo; \
-  echo 'Iniciando scheduler de actualizaciones diarias...'; \
+  echo 'NOTA: Base de datos LIMPIA - ETLs deben ejecutarse manualmente'; \
+  echo 'Scheduler solo maneja actualizaciones diarias de BCCR a las 5:00 AM'; \
   echo '==============================================================================='; \
   exec python3 scheduler.py \
 "]

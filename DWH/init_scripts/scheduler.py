@@ -99,25 +99,30 @@ def main():
     """Main scheduler loop"""
     logger.info("BCCR Exchange Rate Scheduler started")
     logger.info("Schedule: Daily at 5:00 AM")
+    logger.info("NOTE: ETLs must be run manually. Scheduler only handles BCCR updates.")
 
-    # Run ETLs once at startup (idempotent if no landing files)
-    run_etl_scripts_once()
-    # Run BCCR current update once
+    # NO ejecutar ETLs al inicio - la base debe estar limpia
+    # Poblar datos históricos de BCCR (3 años) una sola vez al inicio
     try:
+        logger.info("Populating historical BCCR exchange rates (3 years)...")
         result = subprocess.run(
-            [sys.executable, str(BCCR_SCRIPT), 'update-current'],
+            [sys.executable, str(BCCR_SCRIPT), 'populate'],
             cwd=str(SCRIPT_DIR),
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=600  # 10 minutos para población histórica
         )
         if result.returncode == 0:
-            logger.info("Initial exchange rate update completed successfully")
+            logger.info("Historical exchange rate population completed successfully")
+            if result.stdout:
+                logger.debug(f"Output: {result.stdout}")
         else:
-            logger.error(f"Initial exchange rate update failed with code {result.returncode}")
+            logger.error(f"Historical population failed with code {result.returncode}")
             logger.error(f"Error: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        logger.error("Historical population timed out (exceeded 10 minutes)")
     except Exception as e:
-        logger.error(f"Unexpected error during initial update: {str(e)}")
+        logger.error(f"Unexpected error during historical population: {str(e)}")
     
     # Schedule the job to run daily at 5:00 AM
     schedule.every().day.at("05:00").do(job)
