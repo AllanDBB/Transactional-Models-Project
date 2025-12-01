@@ -26,7 +26,7 @@
     4.2 - docker exec dwh-scheduler python etl_mysql.py; 
     4.3 - docker exec dwh-scheduler python etl_mongo.py; 
     4.4 - docker exec dwh-scheduler python etl_neo4j.py; 
-    4.5 - docker exec dwh-scheduler python etl_supabase.py
+    4.5 - docker exec dwh-scheduler python etl_supabase.py;
 
 ## Para probar utilizar:
 ``` sql
@@ -60,22 +60,31 @@ docker exec dwh-scheduler python transform_staging_to_dwh.py
 ```
 ## Para probar
 ```sql
-select * from dwh.DimCategory -- No sale nada
+select * from dwh.DimCategory
 select * from dwh.DimChannel
 select * from dwh.DimCustomer
 select * from dwh.DimExchangeRate
-select * from dwh.DimOrder -- No sale nada
-select * from dwh.DimProduct -- Al parecer hay una cosa raro con los de mongo
+select * from dwh.DimOrder 
+select * from dwh.DimProduct
 select * from dwh.DimTime
 select * from dwh.FactSales
-select * from dwh.FactTargetSales -- No sale nada
-select * from dwh.MetasVentas -- No tiene nada / no debería tener nada
+select * from dwh.FactTargetSales 
+select * from dwh.MetasVentas 
 ```
 
-# 6 Carga de datos a DWH. ¿debería haber un MDM? (Load layer)
+## Bases de datos revisadas en el DWH
+    - MongoDB: Todo funciona bien (creo)
+    - Neo4J: Parece que todo funciona (creo x2)
+    - SupaBase: esa vara parece funcionar, no tengo ni la menor idea de porqué, parece que sí !
+    - MySQL: funcionó bien
+    - MSSQL: solo Dios sabe porqué funcionó
 
-# 7 Pruebas unitarias a websites.
+# 6 Pruebas unitarias a websites.
+    - Deben revisar cada una individualmente y que funcione. (MSSQL y MySQL parece que funcionan)
+    - Neo4J: 
+    - MongoDB:
+    - SupaBase:
+    
+# 7 Apriori - Reglas de Asociación de Productos
 
-# 8 Apriori - Reglas de Asociación de Productos
-
-# 9 Powerbgay
+# 8 Powerbgay
