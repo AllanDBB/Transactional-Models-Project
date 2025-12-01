@@ -81,10 +81,10 @@ select * from dwh.MetasVentas
 
 # 6 Pruebas unitarias a websites.
     - Deben revisar cada una individualmente y que funcione. (MSSQL y MySQL parece que funcionan)
-    - Neo4J: 
-    - MongoDB:
-    - SupaBase:
-    
+    - Neo4J: Neo revisado por Allan, funcionando.
+    - MongoDB: Mongo revisado por Allan, funcionando.
+    - SupaBase: ni idea, creo que funca no sé
+
 # 7 Apriori - Reglas de Asociación de Productos
 
 # 8 Powerbgay
