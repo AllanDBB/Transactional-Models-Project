@@ -30,7 +30,7 @@ def get_connection():
         user=user,
         password=password,
         database=database,
-        timeout=30,
+        timeout=300,  # 5 minutos timeout para queries pesadas
         as_dict=False,
     )
 
