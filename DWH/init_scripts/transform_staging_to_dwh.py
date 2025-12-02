@@ -68,7 +68,22 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info("✓ Limpiado")
             
-            # 2. DimCustomer (consolidar de todas las fuentes, dedup por email)
+            # 2. DimExchangeRate - promover desde staging.tipo_cambio
+            logger.info("\n💱 Promoviendo staging.tipo_cambio → dwh.DimExchangeRate...")
+            cur.execute("SELECT COUNT(*) FROM staging.tipo_cambio")
+            tipo_cambio_count = cur.fetchone()[0]
+            logger.info(f"   • Tipos de cambio en staging: {tipo_cambio_count:,}")
+            
+            if tipo_cambio_count > 0:
+                cur.execute("EXEC dbo.sp_promote_exchange_rate")
+                conn.commit()
+                cur.execute("SELECT COUNT(*) FROM dwh.DimExchangeRate")
+                exchange_rate_count = cur.fetchone()[0]
+                logger.info(f"✓ {exchange_rate_count:,} tipos de cambio")
+            else:
+                logger.warning("⚠️  No hay datos en staging.tipo_cambio, omitiendo...")
+            
+            # 3. DimCustomer (consolidar de todas las fuentes, dedup por email)
             logger.info("\n📊 Transformando staging → dwh.DimCustomer...")
             cur.execute("""
                 INSERT INTO dwh.DimCustomer (name, email, gender, country, created_at)
@@ -114,7 +129,7 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info(f"✓ {count:,} clientes únicos")
             
-            # 3. DimCategory (consolidar categorías de todos los productos)
+            # 4. DimCategory (consolidar categorías de todos los productos)
             logger.info("\n🏷️  Transformando staging → dwh.DimCategory...")
             cur.execute("""
                 INSERT INTO dwh.DimCategory (name)
@@ -140,7 +155,7 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info(f"✓ {count:,} categorías")
             
-            # 4. DimProduct (consolidar productos de todas las fuentes CON categoryId)
+            # 5. DimProduct (consolidar productos de todas las fuentes CON categoryId)
             logger.info("\n📦 Transformando staging → dwh.DimProduct...")
             cur.execute("""
                 INSERT INTO dwh.DimProduct (name, code, categoryId)
@@ -186,7 +201,7 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info(f"✓ {count:,} productos")
             
-            # 5. DimTime (generar para 2024-2025)
+            # 6. DimTime (generar para 2024-2025)
             logger.info("\n📅 Generando dwh.DimTime...")
             start_date = datetime(2024, 1, 1)
             end_date = datetime(2025, 12, 31)
@@ -209,7 +224,7 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info(f"✓ {count:,} fechas")
             
-            # 6. DimChannel - con IDs fijos 1-5
+            # 7. DimChannel - con IDs fijos 1-5
             logger.info("\n📡 Poblando dwh.DimChannel...")
             cur.execute("SET IDENTITY_INSERT dwh.DimChannel ON")
             cur.execute("""
@@ -220,7 +235,7 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info("✓ 5 canales (IDs 1-5)")
             
-            # 7. DimOrder - crear órdenes reales desde staging
+            # 8. DimOrder - crear órdenes reales desde staging
             logger.info("\n📝 Transformando staging → dwh.DimOrder...")
             
             # Crear órdenes desde cada fuente
@@ -266,11 +281,11 @@ def transform_staging_to_dwh():
             conn.commit()
             logger.info(f"✓ {count:,} órdenes creadas")
             
-            # 8. FactSales (consolidar ventas de todas las fuentes)
+            # 9. FactSales (consolidar ventas de todas las fuentes)
             logger.info("\n💰 Transformando staging → dwh.FactSales...")
             logger.info("   (Esto puede tardar 1-2 minutos...)")
             
-            # 7.1 MSSQL sales
+            # 9.1 MSSQL sales
             logger.info("   • Cargando MSSQL sales...")
             cur.execute("""
                 WITH mssql_orders AS (
@@ -295,10 +310,18 @@ def transform_staging_to_dwh():
                     END as channelId,
                     COALESCE(o.id, 1) as orderId,
                     s.quantity,
-                    s.unit_price,
-                    s.quantity * s.unit_price as lineTotalUSD,
+                    -- Si viene en CRC, convertir a USD dividiendo por el rate
+                    CASE 
+                        WHEN s.currency = 'CRC' AND ex.rate IS NOT NULL THEN s.unit_price / ex.rate
+                        ELSE s.unit_price
+                    END as productUnitPriceUSD,
+                    -- Calcular total en USD
+                    CASE 
+                        WHEN s.currency = 'CRC' AND ex.rate IS NOT NULL THEN (s.quantity * s.unit_price) / ex.rate
+                        ELSE s.quantity * s.unit_price
+                    END as lineTotalUSD,
                     0.0 as discountPercentage,
-                    NULL as exchangeRateId,
+                    ex.id as exchangeRateId,
                     GETDATE() as created_at
                 FROM staging.mssql_sales s
                 INNER JOIN staging.mssql_products sp ON sp.source_key = s.product_key AND sp.source_system = 'MSSQL_SRC'
@@ -306,6 +329,7 @@ def transform_staging_to_dwh():
                 INNER JOIN dwh.DimProduct p ON p.code = sp.code
                 INNER JOIN dwh.DimCustomer c ON c.email = sc.email
                 INNER JOIN dwh.DimTime t ON t.date = s.order_date
+                LEFT JOIN dwh.DimExchangeRate ex ON ex.date = s.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN mssql_orders mo ON mo.order_key = s.order_key
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - mo.total) < 0.01
                 WHERE s.quantity > 0 AND s.unit_price > 0
@@ -339,16 +363,25 @@ def transform_staging_to_dwh():
                     END as channelId,
                     COALESCE(o.id, 1) as orderId,
                     s.quantity,
-                    s.unit_price,
-                    s.quantity * s.unit_price as lineTotalUSD,
+                    -- Si viene en CRC, convertir a USD dividiendo por el rate
+                    CASE 
+                        WHEN s.currency = 'CRC' AND ex.rate IS NOT NULL THEN s.unit_price / ex.rate
+                        ELSE s.unit_price
+                    END as productUnitPriceUSD,
+                    -- Calcular total en USD
+                    CASE 
+                        WHEN s.currency = 'CRC' AND ex.rate IS NOT NULL THEN (s.quantity * s.unit_price) / ex.rate
+                        ELSE s.quantity * s.unit_price
+                    END as lineTotalUSD,
                     0.0 as discountPercentage,
-                    NULL as exchangeRateId,
+                    ex.id as exchangeRateId,
                     GETDATE() as created_at
                 FROM staging.mysql_sales s
                 INNER JOIN staging.mysql_customers mc ON mc.source_key = s.customer_key AND mc.source_system = 'MySQL'
                 INNER JOIN dwh.DimProduct p ON p.code = s.sku
                 INNER JOIN dwh.DimCustomer c ON c.email = mc.correo
                 INNER JOIN dwh.DimTime t ON t.date = s.order_date
+                LEFT JOIN dwh.DimExchangeRate ex ON ex.date = s.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN mysql_orders mo ON mo.order_key = s.order_key
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - mo.total) < 0.01
                 WHERE s.quantity > 0 AND s.unit_price > 0
@@ -372,16 +405,25 @@ def transform_staging_to_dwh():
                     1 as channelId,
                     COALESCE(o.id, 1) as orderId,
                     oi.quantity,
-                    oi.unit_price,
-                    oi.quantity * oi.unit_price as lineTotalUSD,
+                    -- Si viene en CRC, convertir a USD dividiendo por el rate
+                    CASE 
+                        WHEN oi.currency = 'CRC' AND ex.rate IS NOT NULL THEN oi.unit_price / ex.rate
+                        ELSE oi.unit_price
+                    END as productUnitPriceUSD,
+                    -- Calcular total en USD
+                    CASE 
+                        WHEN oi.currency = 'CRC' AND ex.rate IS NOT NULL THEN (oi.quantity * oi.unit_price) / ex.rate
+                        ELSE oi.quantity * oi.unit_price
+                    END as lineTotalUSD,
                     0.0 as discountPercentage,
-                    NULL as exchangeRateId,
+                    ex.id as exchangeRateId,
                     GETDATE() as created_at
                 FROM staging.mongo_order_items oi
                 INNER JOIN staging.mongo_orders mo ON mo.source_key = oi.order_key AND mo.source_system = 'MongoDB'
                 INNER JOIN staging.mongo_customers mc ON mc.source_key = mo.customer_key AND mc.source_system = 'MongoDB'
                 INNER JOIN dwh.DimCustomer c ON c.email = mc.email
                 INNER JOIN dwh.DimTime t ON t.date = oi.order_date
+                LEFT JOIN dwh.DimExchangeRate ex ON ex.date = oi.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 -- Mapear producto desde staging.mongo_products usando product_key
                 INNER JOIN staging.mongo_products mp ON mp.source_key = oi.product_key AND mp.source_system = 'MongoDB'
                 INNER JOIN dwh.DimProduct p ON p.code = mp.codigo_mongo
@@ -414,16 +456,25 @@ def transform_staging_to_dwh():
                     1 as channelId,
                     COALESCE(o.id, 1) as orderId,
                     oi.quantity,
-                    oi.unit_price,
-                    oi.quantity * oi.unit_price as lineTotalUSD,
+                    -- Si viene en CRC, convertir a USD dividiendo por el rate
+                    CASE 
+                        WHEN oi.currency = 'CRC' AND ex.rate IS NOT NULL THEN oi.unit_price / ex.rate
+                        ELSE oi.unit_price
+                    END as productUnitPriceUSD,
+                    -- Calcular total en USD
+                    CASE 
+                        WHEN oi.currency = 'CRC' AND ex.rate IS NOT NULL THEN (oi.quantity * oi.unit_price) / ex.rate
+                        ELSE oi.quantity * oi.unit_price
+                    END as lineTotalUSD,
                     0.0 as discountPercentage,
-                    NULL as exchangeRateId,
+                    ex.id as exchangeRateId,
                     GETDATE() as created_at
                 FROM staging.neo4j_order_items oi
                 INNER JOIN staging.neo4j_nodes nc ON nc.node_key = oi.customer_key AND nc.node_label = 'Cliente'
                 INNER JOIN dwh.DimCustomer c ON c.email = JSON_VALUE(nc.props_json, '$.email')
                 INNER JOIN dwh.DimProduct p ON p.code = oi.product_key
                 INNER JOIN dwh.DimTime t ON t.date = oi.order_date
+                LEFT JOIN dwh.DimExchangeRate ex ON ex.date = oi.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN neo4j_orders no ON no.order_key = oi.order_key
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - no.total) < 0.01
                 WHERE oi.quantity > 0 AND oi.unit_price > 0 AND oi.product_key IS NOT NULL
@@ -450,7 +501,7 @@ def transform_staging_to_dwh():
                     oi.unit_price,
                     oi.subtotal as lineTotalUSD,
                     0.0 as discountPercentage,
-                    NULL as exchangeRateId,
+                    ex.id as exchangeRateId,
                     GETDATE() as created_at
                 FROM staging.supabase_order_items oi
                 INNER JOIN staging.supabase_orders so ON so.source_key = oi.order_key AND so.source_system = 'SUPABASE'
@@ -459,6 +510,7 @@ def transform_staging_to_dwh():
                 INNER JOIN staging.supabase_products sp ON sp.source_key = oi.product_key AND sp.source_system = 'SUPABASE'
                 INNER JOIN dwh.DimProduct p ON p.code = sp.source_key
                 INNER JOIN dwh.DimTime t ON t.date = CAST(so.created_at_src AS DATE)
+                LEFT JOIN dwh.DimExchangeRate ex ON ex.date = CAST(so.created_at_src AS DATE) AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - so.total_amount) < 0.01
                 WHERE oi.quantity > 0 AND oi.unit_price > 0
             """)
@@ -488,6 +540,9 @@ def transform_staging_to_dwh():
             
             cur.execute("SELECT COUNT(*) FROM dwh.DimChannel")
             logger.info(f"   • Canales:    {cur.fetchone()[0]:>8,}")
+            
+            cur.execute("SELECT COUNT(*) FROM dwh.DimExchangeRate")
+            logger.info(f"   • Tipos Camb: {cur.fetchone()[0]:>8,}")
             
             cur.execute("SELECT COUNT(*) FROM dwh.DimOrder")
             logger.info(f"   • Órdenes:    {cur.fetchone()[0]:>8,}")
