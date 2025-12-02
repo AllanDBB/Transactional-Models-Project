@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Get the directory of this script
 SCRIPT_DIR = Path(__file__).parent
 BCCR_SCRIPT = SCRIPT_DIR / 'bccr_exchange_rate.py'
+APRIORI_SCRIPT = SCRIPT_DIR / 'apriori_analysis.py'
 ETL_SCRIPTS = [
     SCRIPT_DIR / 'etl_mongo.py',
     SCRIPT_DIR / 'etl_mssql_src.py',
@@ -39,7 +40,7 @@ ETL_SCRIPTS = [
 PROMOTE_SP = "sp_etl_run_all"
 
 
-def job():
+def job_exchange_rate():
     """Execute the BCCR exchange rate update"""
     logger.info("Starting scheduled exchange rate update...")
     try:
@@ -62,6 +63,31 @@ def job():
         logger.error("Exchange rate update timed out (exceeded 5 minutes)")
     except Exception as e:
         logger.error(f"Unexpected error during update: {str(e)}")
+
+
+def job_apriori():
+    """Execute the Apriori association rules analysis"""
+    logger.info("Starting scheduled Apriori analysis...")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(APRIORI_SCRIPT), 'run'],
+            cwd=str(SCRIPT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=1800  # 30 minutes timeout for large datasets
+        )
+        
+        if result.returncode == 0:
+            logger.info("Apriori analysis completed successfully")
+            logger.debug(f"Output: {result.stdout}")
+        else:
+            logger.error(f"Apriori analysis failed with code {result.returncode}")
+            logger.error(f"Error: {result.stderr}")
+            
+    except subprocess.TimeoutExpired:
+        logger.error("Apriori analysis timed out (exceeded 30 minutes)")
+    except Exception as e:
+        logger.error(f"Unexpected error during Apriori analysis: {str(e)}")
 
 
 def run_etl_scripts_once():
@@ -97,9 +123,14 @@ def run_etl_scripts_once():
 
 def main():
     """Main scheduler loop"""
-    logger.info("BCCR Exchange Rate Scheduler started")
-    logger.info("Schedule: Daily at 5:00 AM")
-    logger.info("NOTE: ETLs must be run manually. Scheduler only handles BCCR updates.")
+    logger.info("=" * 80)
+    logger.info("SCHEDULER INICIADO - DWH Automation")
+    logger.info("=" * 80)
+    logger.info("Schedule:")
+    logger.info("  - BCCR Exchange Rate: Daily at 5:00 AM")
+    logger.info("  - Apriori Analysis: Weekly on Sundays at 2:00 AM")
+    logger.info("NOTE: ETLs must be run manually. Scheduler only handles BCCR & Apriori.")
+    logger.info("=" * 80)
 
     # NO ejecutar ETLs al inicio - la base debe estar limpia
     # Poblar datos históricos de BCCR (3 años) una sola vez al inicio
@@ -113,19 +144,23 @@ def main():
             timeout=600  # 10 minutos para población histórica
         )
         if result.returncode == 0:
-            logger.info("Historical exchange rate population completed successfully")
+            logger.info("✓ Historical exchange rate population completed successfully")
             if result.stdout:
                 logger.debug(f"Output: {result.stdout}")
         else:
-            logger.error(f"Historical population failed with code {result.returncode}")
+            logger.error(f"✗ Historical population failed with code {result.returncode}")
             logger.error(f"Error: {result.stderr}")
     except subprocess.TimeoutExpired:
-        logger.error("Historical population timed out (exceeded 10 minutes)")
+        logger.error("✗ Historical population timed out (exceeded 10 minutes)")
     except Exception as e:
-        logger.error(f"Unexpected error during historical population: {str(e)}")
+        logger.error(f"✗ Unexpected error during historical population: {str(e)}")
     
-    # Schedule the job to run daily at 5:00 AM
-    schedule.every().day.at("05:00").do(job)
+    # Schedule jobs
+    schedule.every().day.at("05:00").do(job_exchange_rate)
+    schedule.every().sunday.at("02:00").do(job_apriori)
+    
+    logger.info("\n✓ Scheduler configured and running...")
+    logger.info("Waiting for scheduled tasks...\n")
     
     # Keep the scheduler running
     try:
@@ -133,9 +168,9 @@ def main():
             schedule.run_pending()
             time.sleep(60)  # Check every minute
     except KeyboardInterrupt:
-        logger.info("Scheduler stopped by user")
+        logger.info("\n✓ Scheduler stopped by user")
     except Exception as e:
-        logger.error(f"Scheduler error: {str(e)}")
+        logger.error(f"\n✗ Scheduler error: {str(e)}")
         sys.exit(1)
 
 

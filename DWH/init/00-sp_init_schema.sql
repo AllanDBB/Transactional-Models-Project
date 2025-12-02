@@ -42,7 +42,8 @@ BEGIN
         -- ELIMINAR TABLAS EN ORDEN CORRECTO (FACT → DIM → STAGING)
         -----------------------------------------------------------------------
 
-        -- FACTS
+        -- FACTS & APRIORI
+        IF OBJECT_ID('dwh.ProductAssociationRules', 'U') IS NOT NULL DROP TABLE dwh.ProductAssociationRules;
         IF OBJECT_ID('dwh.FactTargetSales', 'U') IS NOT NULL DROP TABLE dwh.FactTargetSales;
         IF OBJECT_ID('dwh.MetasVentas', 'U') IS NOT NULL DROP TABLE dwh.MetasVentas;
         IF OBJECT_ID('dwh.FactSales', 'U') IS NOT NULL DROP TABLE dwh.FactSales;
@@ -218,6 +219,25 @@ BEGIN
             CONSTRAINT unique_meta UNIQUE (customerId, productId, Anio, Mes)
         );
 
+        -- Tabla de reglas de asociación (Apriori)
+        CREATE TABLE dwh.ProductAssociationRules (
+            RuleID INT IDENTITY(1,1) PRIMARY KEY,
+            AntecedentProductIds NVARCHAR(500) NOT NULL,  -- IDs separados por coma
+            ConsequentProductIds NVARCHAR(500) NOT NULL,
+            AntecedentNames NVARCHAR(1000),  -- Nombres para display
+            ConsequentNames NVARCHAR(1000),
+            Support DECIMAL(10,6) NOT NULL,
+            Confidence DECIMAL(10,6) NOT NULL,
+            Lift DECIMAL(10,6) NOT NULL,
+            FechaCalculo DATETIME DEFAULT GETDATE(),
+            Activo BIT DEFAULT 1,
+            CONSTRAINT chk_support CHECK (Support > 0 AND Support <= 1),
+            CONSTRAINT chk_confidence CHECK (Confidence > 0 AND Confidence <= 1),
+            CONSTRAINT chk_lift CHECK (Lift > 0)
+        );
+        CREATE INDEX idx_apriori_antecedent ON dwh.ProductAssociationRules(AntecedentProductIds);
+        CREATE INDEX idx_apriori_activo ON dwh.ProductAssociationRules(Activo, Lift DESC);
+
 
         -----------------------------------------------------------------------
         -- Mensajes de éxito
@@ -230,7 +250,8 @@ BEGIN
         PRINT 'Tablas STAGING:   3';
         PRINT 'Tablas DIMENSION: 7';
         PRINT 'Tablas FACT:      3';
-        PRINT 'Total tablas:     13';
+        PRINT 'Tablas APRIORI:   1';
+        PRINT 'Total tablas:     14';
         PRINT '=========================================================';
 
     END TRY
