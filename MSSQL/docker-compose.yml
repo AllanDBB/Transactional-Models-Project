@@ -13,8 +13,12 @@ services:
       - "1435:1433"
     volumes:
       - sqldata:/var/opt/mssql
-      - ./init:/docker-entrypoint-initdb.d
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "BasesDatos2!", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   sqldata:

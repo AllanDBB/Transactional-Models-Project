@@ -2,27 +2,56 @@ FROM mcr.microsoft.com/mssql/server:2022-latest
 
 USER root
 
-# Instalar mssql-tools para sqlcmd
-RUN apt-get update \
-    && apt-get install -y curl apt-transport-https gnupg \
-    && mkdir -p /etc/apt/keyrings \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/keyrings/microsoft.gpg \
-    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Remover paquetes ODBC viejos que causan conflicto
+RUN apt-get update && \
+    apt-get remove -y libodbc2 libodbcinst2 unixodbc-common unixodbc odbcinst && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/opt/mssql-tools18/bin:${PATH}" \
-    TZ=America/Costa_Rica
+# Instalar sqlcmd tools
+RUN apt-get update && apt-get install -y curl gnupg2 && \
+    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev && \
+    echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copiar scripts SQL
-COPY MSSQL/init/*.sql /usr/src/app/
+# Crear directorio para scripts
+RUN mkdir -p /docker-entrypoint-initdb.d
 
-# Copiar script de inicialización
-COPY MSSQL/init-db.sh /usr/src/app/init-db.sh
-RUN chmod +x /usr/src/app/init-db.sh
+# Copiar scripts de inicialización de MSSQL
+COPY MSSQL/init/*.sql /docker-entrypoint-initdb.d/
+
+ENV TZ=America/Costa_Rica
+ENV PATH="$PATH:/opt/mssql-tools/bin"
 
 EXPOSE 1433
 
-# Iniciar SQL Server y ejecutar scripts de inicialización
-CMD /usr/src/app/init-db.sh & /opt/mssql/bin/sqlservr
+# Ejecutar SQL Server, esperar que este listo y correr los scripts .sql
+ENTRYPOINT ["/bin/bash", "-c", "\
+  set -e; \
+  /opt/mssql/bin/sqlservr & \
+  sql_pid=$!; \
+  echo 'Esperando que SQL Server MSSQL inicie...'; \
+  for i in $(seq 1 60); do \
+    if /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$SA_PASSWORD\" -Q \"SELECT 1\" >/dev/null 2>&1; then \
+      echo 'OK: SQL Server MSSQL esta listo'; \
+      break; \
+    fi; \
+    echo \"Intento ${i}/60...\"; \
+    sleep 1; \
+  done; \
+  echo 'Ejecutando scripts de inicializacion MSSQL...'; \
+  for script in /docker-entrypoint-initdb.d/*.sql; do \
+    [ -e \"$script\" ] || continue; \
+    echo \"Ejecutando: $(basename \"$script\")\"; \
+    if /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$SA_PASSWORD\" -i \"$script\"; then \
+      echo \"OK: Completado $(basename \"$script\")\"; \
+    else \
+      echo \"ERROR: Fallo $(basename \"$script\")\"; \
+    fi; \
+  done; \
+  echo 'Inicializacion MSSQL completada'; \
+  wait $sql_pid \
+"]
