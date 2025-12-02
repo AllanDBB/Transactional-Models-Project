@@ -81,6 +81,14 @@
                     </div>
                 </form>
                 <p class="muted small">Consulta los registros en el panel de datos.</p>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #2a3a4a;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0; font-size: 1.1em;">Productos con Recomendaciones</h3>
+                        <button type="button" class="ghost tiny" onclick="loadProductos()">🔄 Refrescar</button>
+                    </div>
+                    <div id="productos-list-main" class="list" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
             </section>
 
             <section class="card order-card">

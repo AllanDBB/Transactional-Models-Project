@@ -298,8 +298,30 @@
 
   <section class="card" style="margin-top:14px;">
     <div class="row" style="align-items:center; margin-bottom:8px;">
+      <h3 style="margin:0;">Recomendaciones Apriori</h3>
+      <span class="small">Consulta el DWH para obtener recomendaciones de productos.</span>
+    </div>
+    <form id="formRecomendaciones" style="display: flex; gap: 8px; align-items: end;">
+      <div>
+        <label>ID Producto DWH</label>
+        <input id="recProductId" type="number" placeholder="5689" required />
+      </div>
+      <div>
+        <label>Top N</label>
+        <input id="recTopN" type="number" min="1" max="20" value="5" />
+      </div>
+      <button type="submit">Consultar</button>
+    </form>
+    <div id="recOutput" style="margin-top:12px; padding:12px; background: var(--input); border-radius: 8px; display: none;">
+      <strong>Clientes que compraron esto también compraron:</strong>
+      <ul id="recList" style="margin: 8px 0 0 20px; padding: 0;"></ul>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:14px;">
+    <div class="row" style="align-items:center; margin-bottom:8px;">
       <h3 style="margin:0;">Panel de datos (clientes, productos, equivalencias, órdenes)</h3>
-      <span class="small">Se alimenta con el botón “Refrescar datos”.</span>
+      <span class="small">Se alimenta con el botón "Refrescar datos".</span>
     </div>
     <pre id="dataOut">[]</pre>
   </section>
@@ -486,6 +508,42 @@
     document.getElementById('btnClearItems').addEventListener('click', () => {
       items = [];
       renderItems();
+    });
+
+    // Recomendaciones
+    document.getElementById('formRecomendaciones').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const productId = document.getElementById('recProductId').value;
+      const topN = document.getElementById('recTopN').value || 5;
+      const dwhApiUrl = 'http://localhost:3000'; // MongoDB API que tiene endpoint de recomendaciones
+
+      try {
+        const res = await fetch(`${dwhApiUrl}/api/recomendaciones/producto/${productId}?topN=${topN}`);
+        const data = await res.json();
+
+        const output = document.getElementById('recOutput');
+        const list = document.getElementById('recList');
+
+        if (data.success && data.recomendaciones?.length > 0) {
+          list.innerHTML = data.recomendaciones.map(r => `
+            <li style="margin-bottom: 6px;">
+              <strong>${r.ConsequentNames}</strong>
+              <span style="color: var(--muted); font-size: 0.9em;">
+                (Lift: ${r.Lift.toFixed(2)}, Conf: ${(r.Confidence * 100).toFixed(1)}%)
+              </span>
+            </li>
+          `).join('');
+          output.style.display = 'block';
+          setStatus('Recomendaciones cargadas', 'ok');
+        } else {
+          list.innerHTML = '<li style="color: var(--muted);">No hay recomendaciones para este producto</li>';
+          output.style.display = 'block';
+          setStatus('Sin recomendaciones', 'ok');
+        }
+      } catch (err) {
+        setStatus('Error consultando recomendaciones: ' + err.message, 'error');
+        document.getElementById('recOutput').style.display = 'none';
+      }
     });
 
     // Orden

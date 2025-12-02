@@ -22,6 +22,7 @@ mongoose.connect(uri)
 app.use('/api/clientes', require('./routes/clienteRoutes'));
 app.use('/api/productos', require('./routes/productoRoutes'));
 app.use('/api/ordenes', require('./routes/ordenRoutes'));
+app.use('/api/recomendaciones', require('./routes/recomendacionesRoutes'));
 
 app.get('/health', (_req, res) => res.send('ok'));
 

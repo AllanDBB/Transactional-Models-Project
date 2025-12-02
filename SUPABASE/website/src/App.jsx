@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabaseClient";
+import Recomendaciones from "./Recomendaciones";
 import "./App.css";
 
 const CHANNELS = ["WEB", "APP", "PARTNER"];
@@ -296,6 +297,35 @@ export default function App() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <p className="eyebrow">Catálogo</p>
+            <h2>Productos</h2>
+          </div>
+          <button className="ghost" onClick={() => loadProductos()} disabled={busy}>
+            ↻
+          </button>
+        </div>
+        <div className="list compact">
+          {productos.slice(0, 10).map((p) => (
+            <div key={p.producto_id} className="list-row">
+              <div>
+                <strong>{p.nombre}</strong>
+                <p className="muted">
+                  {p.categoria} · SKU: {p.sku}
+                </p>
+                <Recomendaciones 
+                  productoId={p.producto_id} 
+                  dwhProductId={p.sku ? parseInt(p.sku.replace(/\D/g, '')) : null} 
+                />
+              </div>
+            </div>
+          ))}
+          {!productos.length && <p className="muted">No hay productos.</p>}
+        </div>
       </section>
 
       <section className="card">

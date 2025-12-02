@@ -3,7 +3,12 @@ const Producto = require('../models/productos');
 const list = async (_req, res) => {
     try {
         const productos = await Producto.find().lean();
-        res.json(productos);
+        // Enriquecer con info de SKU para frontend
+        const enriched = productos.map(p => ({
+            ...p,
+            dwhProductId: p.equivalencias?.sku ? parseInt(p.equivalencias.sku.replace(/[^\d]/g, '')) || null : null
+        }));
+        res.json(enriched);
     } catch (err) {
         res.status(500).json({ message: 'Error listando productos', error: err.message });
     }

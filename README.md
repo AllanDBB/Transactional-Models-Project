@@ -3,15 +3,22 @@
     - docker compose build --no-cache
     - docker compose up -d
 
+**Credenciales del DWH:**
+- Host: `localhost:1434`
+- Usuario: `sa`
+- Contraseña: `BasesDatos2!`
+- Base de datos: `MSSQL_DW`
+
 # 2 Leventar bases de datos.
     3.1 - Levantar MYSQL:
         cd MYSQL; docker compose up -d --build
     3.2 - Levantar MSSQL: 
-        cd MSSQL; docker-compose up -d -- build;
+        cd MSSQL; docker-compose up -d --build;
     3.3 - Levantar web SQL:
         cd MSSQL/server; npm i ; npm run dev (iniciar schemas desde ahí)
     3.3 - Levantar SupaBase: 
         cd SUPABASE/website; npm i; npm run dev
+        cd SUPABASE/server; npm i; npm run dev
     3.4 - Levantar MongoDB: 
         cd MONGODB; npm i, npm run dev
     3.5 - Levantar Neo4J:
@@ -58,6 +65,7 @@ select * from staging.supabase_products
 ```bash
 docker exec dwh-scheduler python transform_staging_to_dwh.py
 ```
+
 ## Para probar
 ```sql
 select * from dwh.DimCategory
@@ -103,6 +111,7 @@ docker exec dwh-scheduler python apriori_analysis.py run
 ```
 
 ### Automático:
+```sql
 - Se ejecuta **cada domingo a las 2:00 AM**
 - Configurado en `DWH/init_scripts/scheduler.py`
 - Analiza todas las transacciones del DWH
@@ -121,51 +130,24 @@ EXEC dbo.sp_get_product_recommendations @ProductId=5689, @TopN=5;
 EXEC sp_get_cart_recommendations @ProductIds='5689,5737', @TopN=10;
 
 -- Ver todas las reglas activas
-```
 SELECT * FROM dwh.ProductAssociationRules WHERE Activo = 1 ORDER BY Lift DESC;
 ```
 
-## 7.3 Configuración
-
-### Parámetros en `.env`:
-```bash
-APRIORI_MIN_SUPPORT=0.0005    # Soporte mínimo (0.05% - ~13 transacciones)
-APRIORI_MIN_CONFIDENCE=0.05   # Confianza mínima (5%)
-APRIORI_MIN_LIFT=1.0          # Lift mínimo
-```
-### Resultados actuales:
-- **288 reglas** de asociación generadas
-- **Lift máximo:** 6.75 (correlación muy fuerte entre productos)
-- **Dataset:** 26,056 transacciones, 5,758 productos únicos
-- **Promedio:** 3.22 productos por transacción
-- **Itemsets frecuentes:** 930 (750 individuales, 180 pares)
-
-## 7.4 Integración con websites
+## 7.3 Integración con websites
 
 ### MongoDB:
-```javascript
-// GET /api/recomendaciones/:productId
-// Consulta sp_get_product_recommendations del DWH
+#### 5.1 Mapear productos MongoDB con DWH
+```bash
+cd MONGODB/server; node update_product_skus.js
 ```
 
 ### Supabase:
-```javascript
-// GET /api/recomendaciones/:productId
-// Consulta sp_get_product_recommendations del DWH
+#### 5.2 Mapear productos Supabase con DWH
+```bash
+cd SUPABASE/server; node update_product_skus.js
 ```
 
-### Neo4j:
-```javascript
-// Mostrar recomendaciones en página de producto
-// Consulta sp_get_product_recommendations del DWH
-```
-
-**Casos de uso:**
-- "Clientes que compraron esto también compraron..."
-- "Completa tu compra con estos productos"
-- "Recomendaciones personalizadas basadas en tu carrito"
-
-# 8 Powerbgay
+# 8 Power BI
 crear metas:
 ```sql
 INSERT INTO dwh.MetasVentas (customerId, productId, Anio, Mes, MetaUSD)

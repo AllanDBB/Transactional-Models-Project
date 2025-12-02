@@ -120,23 +120,33 @@ async function loadProductos() {
 
 function renderProductos() {
     const list = document.getElementById('productos-list');
-    if (!productos.length) {
-        list.innerHTML = '<p class="muted">Sin productos.</p>';
-        return;
-    }
-    list.innerHTML = productos.map(p => `
+    const listMain = document.getElementById('productos-list-main');
+    
+    const html = !productos.length ? '<p class="muted">Sin productos.</p>' : productos.map(p => {
+        const dwhId = p.dwhProductId || (p.equivalencias?.sku ? parseInt(p.equivalencias.sku.replace(/[^\d]/g, '')) : null);
+        const skuDisplay = p.equivalencias?.sku || 'Sin SKU';
+        const hasValidMapping = dwhId && !isNaN(dwhId) && dwhId > 0;
+        
+        return `
         <div class="item">
             <div>
                 <strong>${p.nombre}</strong>
                 <div class="meta">Codigo: ${p.codigo_mongo} · Categoria: ${p.categoria}</div>
-                <div class="meta">Equiv: ${p.equivalencias?.sku || '-'} ${p.equivalencias?.alt ? '/ ' + p.equivalencias.alt : ''}</div>
+                <div class="meta">SKU: ${skuDisplay} ${hasValidMapping ? `(DWH ID: ${dwhId})` : '(Sin mapeo DWH)'}</div>
+                <div id="rec-${p._id}" class="recomendaciones-container"></div>
             </div>
             <div class="actions">
+                ${hasValidMapping ? `<button class="ghost" onclick="verRecomendaciones('${p._id}', ${dwhId})">🔍 Recomendaciones</button>` : `<button class="ghost" disabled title="Este producto no tiene SKU mapeado al DWH">🔍 Sin recomendaciones</button>`}
                 <button class="ghost" onclick="startEditProducto('${p._id}')">Editar</button>
                 <button class="danger" onclick="deleteProducto('${p._id}')">Eliminar</button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+    
+    // Renderizar en ambos lugares: panel lateral y página principal
+    if (list) list.innerHTML = html;
+    if (listMain) listMain.innerHTML = html;
 }
 
 function startEditProducto(id) {
@@ -331,6 +341,45 @@ const dataPanel = document.getElementById('data-panel');
 openDataPanelBtn.addEventListener('click', () => dataPanel.classList.remove('hidden'));
 closeDataPanelBtn.addEventListener('click', () => dataPanel.classList.add('hidden'));
 dataPanel.querySelector('.drawer__backdrop').addEventListener('click', () => dataPanel.classList.add('hidden'));
+
+// ---- Recomendaciones ----
+async function verRecomendaciones(mongoId, dwhProductId) {
+    const container = document.getElementById(`rec-${mongoId}`);
+    
+    // Toggle: si ya está visible, ocultarlo
+    if (container.innerHTML.includes('Clientes que compraron')) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    try {
+        container.innerHTML = '<p class="muted" style="margin-top: 8px;">⏳ Cargando recomendaciones...</p>';
+        
+        const res = await request(`/recomendaciones/producto/${dwhProductId}?topN=5`);
+        
+        if (!res.success || !res.recomendaciones?.length) {
+            container.innerHTML = '<p class="muted" style="margin-top: 8px;">ℹ️ No hay recomendaciones para este producto (puede que no tenga suficientes co-compras)</p>';
+            return;
+        }
+
+        const recsHTML = res.recomendaciones.map(r => 
+            `<li><strong>${r.ConsequentNames}</strong> <span class="meta">(Lift: ${r.Lift.toFixed(2)}, Confianza: ${(r.Confidence * 100).toFixed(1)}%)</span></li>`
+        ).join('');
+
+        container.innerHTML = `
+            <div style="margin-top: 8px; padding: 12px; background: #e8f5e9; border-left: 3px solid #4caf50; border-radius: 4px;">
+                <strong style="color: #2e7d32; font-size: 0.95em; display: block; margin-bottom: 6px;">✨ Clientes que compraron esto también compraron:</strong>
+                <ul style="margin: 0; padding-left: 20px; font-size: 0.9em; color: #333;">
+                    ${recsHTML}
+                </ul>
+                <button onclick="verRecomendaciones('${mongoId}', '${dwhProductId}')" class="ghost" style="margin-top: 8px; font-size: 0.85em;">Cerrar</button>
+            </div>
+        `;
+    } catch (err) {
+        console.error('Error cargando recomendaciones:', err);
+        container.innerHTML = `<p class="muted" style="margin-top: 8px; color: #d32f2f;">❌ Error: ${err.message || 'No se pudo conectar al servidor'}</p>`;
+    }
+}
 
 // ---- Bootstrap ----
 (async function start() {
