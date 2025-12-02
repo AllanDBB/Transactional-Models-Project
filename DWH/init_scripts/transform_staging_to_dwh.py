@@ -156,50 +156,117 @@ def transform_staging_to_dwh():
             logger.info(f"✓ {count:,} categorías")
             
             # 5. DimProduct (consolidar productos de todas las fuentes CON categoryId)
-            logger.info("\n📦 Transformando staging → dwh.DimProduct...")
+            # NUEVA LÓGICA: Deduplicar por nombre y generar SKU unificado
+            logger.info("\n📦 Transformando staging → dwh.DimProduct (con deduplicación)...")
+            
+            # Paso 1: Insertar productos únicos con SKU unificado
             cur.execute("""
-                INSERT INTO dwh.DimProduct (name, code, categoryId)
-                SELECT DISTINCT
-                    p.name,
-                    p.code,
-                    c.id as categoryId
-                FROM (
+                WITH AllProducts AS (
                     -- MSSQL products
-                    SELECT name, code, category FROM staging.mssql_products
+                    SELECT name, code, category, 'MSSQL' as source_system FROM staging.mssql_products
                     UNION ALL
                     -- MySQL products
-                    SELECT nombre as name, COALESCE(sku, codigo_alt) as code, categoria as category 
+                    SELECT nombre as name, COALESCE(sku, codigo_alt) as code, categoria as category, 'MySQL' as source_system
                     FROM staging.mysql_products
                     UNION ALL
                     -- Supabase products
-                    SELECT name, source_key as code, category FROM staging.supabase_products
+                    SELECT name, source_key as code, category, 'Supabase' as source_system FROM staging.supabase_products
                     UNION ALL
-                    -- MongoDB products (desde colección productos)
+                    -- MongoDB products
                     SELECT 
                         nombre as name,
                         codigo_mongo as code,
-                        categoria as category
+                        categoria as category,
+                        'MongoDB' as source_system
                     FROM staging.mongo_products
                     WHERE nombre IS NOT NULL AND codigo_mongo IS NOT NULL
                     UNION ALL
-                    -- Neo4j products (categoría desde relación PERTENECE_A)
+                    -- Neo4j products
                     SELECT 
                         JSON_VALUE(n.props_json, '$.nombre') as name,
                         n.node_key as code,
-                        e.to_key as category
+                        e.to_key as category,
+                        'Neo4j' as source_system
                     FROM staging.neo4j_nodes n
                     LEFT JOIN staging.neo4j_edges e 
                         ON e.edge_type = 'PERTENECE_A' 
                         AND e.from_label = 'Producto' 
                         AND e.from_key = n.node_key
                     WHERE n.node_label = 'Producto' AND JSON_VALUE(n.props_json, '$.nombre') IS NOT NULL
-                ) p
-                LEFT JOIN dwh.DimCategory c ON c.name = p.category
-                WHERE p.name IS NOT NULL AND p.code IS NOT NULL
+                ),
+                UniqueProducts AS (
+                    SELECT 
+                        name,
+                        category,
+                        MIN(code) as original_code,
+                        ROW_NUMBER() OVER (ORDER BY MIN(name)) as row_num
+                    FROM AllProducts
+                    WHERE name IS NOT NULL AND code IS NOT NULL
+                    GROUP BY name, category
+                )
+                INSERT INTO dwh.DimProduct (name, code, categoryId)
+                SELECT 
+                    up.name,
+                    'SKU' + RIGHT('00000' + CAST(up.row_num as VARCHAR), 5) as unified_code,
+                    c.id as categoryId
+                FROM UniqueProducts up
+                LEFT JOIN dwh.DimCategory c ON c.name = up.category
             """)
             count = cur.rowcount
             conn.commit()
-            logger.info(f"✓ {count:,} productos")
+            logger.info(f"✓ {count:,} productos únicos insertados")
+            
+            # Paso 2: Poblar staging.map_producto con todos los mapeos
+            logger.info("📋 Poblando staging.map_producto con mapeos...")
+            cur.execute("""
+                WITH AllProducts AS (
+                    SELECT name, code, 'MSSQL' as source_system FROM staging.mssql_products
+                    UNION ALL
+                    SELECT nombre, COALESCE(sku, codigo_alt), 'MySQL' FROM staging.mysql_products
+                    UNION ALL
+                    SELECT name, source_key, 'Supabase' FROM staging.supabase_products
+                    UNION ALL
+                    SELECT nombre, codigo_mongo, 'MongoDB' FROM staging.mongo_products
+                    WHERE nombre IS NOT NULL AND codigo_mongo IS NOT NULL
+                    UNION ALL
+                    SELECT 
+                        JSON_VALUE(n.props_json, '$.nombre'),
+                        n.node_key,
+                        'Neo4j'
+                    FROM staging.neo4j_nodes n
+                    WHERE n.node_label = 'Producto' AND JSON_VALUE(n.props_json, '$.nombre') IS NOT NULL
+                ),
+                UniqueMapping AS (
+                    SELECT 
+                        ap.source_system,
+                        ap.code,
+                        ap.name,
+                        dp.code as sku_oficial,
+                        ROW_NUMBER() OVER (PARTITION BY ap.source_system, ap.code ORDER BY dp.code) as rn
+                    FROM AllProducts ap
+                    INNER JOIN dwh.DimProduct dp ON dp.name = ap.name
+                    WHERE ap.code IS NOT NULL AND ap.name IS NOT NULL
+                )
+                MERGE INTO staging.map_producto AS target
+                USING (
+                    SELECT 
+                        source_system,
+                        code as source_code,
+                        sku_oficial,
+                        name as descripcion,
+                        1 as activo
+                    FROM UniqueMapping
+                    WHERE rn = 1
+                ) AS source
+                ON target.source_system = source.source_system 
+                   AND target.source_code = source.source_code
+                WHEN NOT MATCHED THEN
+                    INSERT (source_system, source_code, sku_oficial, descripcion, activo)
+                    VALUES (source.source_system, source.source_code, source.sku_oficial, source.descripcion, source.activo);
+            """)
+            map_count = cur.rowcount
+            conn.commit()
+            logger.info(f"✓ {map_count:,} mapeos creados en staging.map_producto")
             
             # 6. DimTime (generar para 2024-2025)
             logger.info("\n📅 Generando dwh.DimTime...")
@@ -326,7 +393,8 @@ def transform_staging_to_dwh():
                 FROM staging.mssql_sales s
                 INNER JOIN staging.mssql_products sp ON sp.source_key = s.product_key AND sp.source_system = 'MSSQL_SRC'
                 INNER JOIN staging.mssql_customers sc ON sc.source_key = s.customer_key AND sc.source_system = 'MSSQL_SRC'
-                INNER JOIN dwh.DimProduct p ON p.code = sp.code
+                INNER JOIN staging.map_producto mp ON mp.source_code = sp.code AND mp.source_system = 'MSSQL'
+                INNER JOIN dwh.DimProduct p ON p.code = mp.sku_oficial
                 INNER JOIN dwh.DimCustomer c ON c.email = sc.email
                 INNER JOIN dwh.DimTime t ON t.date = s.order_date
                 LEFT JOIN dwh.DimExchangeRate ex ON ex.date = s.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
@@ -378,7 +446,8 @@ def transform_staging_to_dwh():
                     GETDATE() as created_at
                 FROM staging.mysql_sales s
                 INNER JOIN staging.mysql_customers mc ON mc.source_key = s.customer_key AND mc.source_system = 'MySQL'
-                INNER JOIN dwh.DimProduct p ON p.code = s.sku
+                INNER JOIN staging.map_producto mp ON mp.source_code = s.sku AND mp.source_system = 'MySQL'
+                INNER JOIN dwh.DimProduct p ON p.code = mp.sku_oficial
                 INNER JOIN dwh.DimCustomer c ON c.email = mc.correo
                 INNER JOIN dwh.DimTime t ON t.date = s.order_date
                 LEFT JOIN dwh.DimExchangeRate ex ON ex.date = s.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
@@ -426,7 +495,8 @@ def transform_staging_to_dwh():
                 LEFT JOIN dwh.DimExchangeRate ex ON ex.date = oi.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 -- Mapear producto desde staging.mongo_products usando product_key
                 INNER JOIN staging.mongo_products mp ON mp.source_key = oi.product_key AND mp.source_system = 'MongoDB'
-                INNER JOIN dwh.DimProduct p ON p.code = mp.codigo_mongo
+                INNER JOIN staging.map_producto mprod ON mprod.source_code = mp.codigo_mongo AND mprod.source_system = 'MongoDB'
+                INNER JOIN dwh.DimProduct p ON p.code = mprod.sku_oficial
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - mo.total_amount) < 0.01
                 WHERE oi.quantity > 0 
                   AND oi.unit_price > 0 
@@ -472,7 +542,8 @@ def transform_staging_to_dwh():
                 FROM staging.neo4j_order_items oi
                 INNER JOIN staging.neo4j_nodes nc ON nc.node_key = oi.customer_key AND nc.node_label = 'Cliente'
                 INNER JOIN dwh.DimCustomer c ON c.email = JSON_VALUE(nc.props_json, '$.email')
-                INNER JOIN dwh.DimProduct p ON p.code = oi.product_key
+                INNER JOIN staging.map_producto mp ON mp.source_code = oi.product_key AND mp.source_system = 'Neo4j'
+                INNER JOIN dwh.DimProduct p ON p.code = mp.sku_oficial
                 INNER JOIN dwh.DimTime t ON t.date = oi.order_date
                 LEFT JOIN dwh.DimExchangeRate ex ON ex.date = oi.order_date AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN neo4j_orders no ON no.order_key = oi.order_key
@@ -508,7 +579,8 @@ def transform_staging_to_dwh():
                 INNER JOIN staging.supabase_users su ON su.source_key = so.user_key AND su.source_system = 'SUPABASE'
                 INNER JOIN dwh.DimCustomer c ON c.email = su.email
                 INNER JOIN staging.supabase_products sp ON sp.source_key = oi.product_key AND sp.source_system = 'SUPABASE'
-                INNER JOIN dwh.DimProduct p ON p.code = sp.source_key
+                INNER JOIN staging.map_producto mp ON mp.source_code = sp.source_key AND mp.source_system = 'Supabase'
+                INNER JOIN dwh.DimProduct p ON p.code = mp.sku_oficial
                 INNER JOIN dwh.DimTime t ON t.date = CAST(so.created_at_src AS DATE)
                 LEFT JOIN dwh.DimExchangeRate ex ON ex.date = CAST(so.created_at_src AS DATE) AND ex.fromCurrency = 'CRC' AND ex.toCurrency = 'USD'
                 LEFT JOIN dwh.DimOrder o ON ABS(o.totalOrderUSD - so.total_amount) < 0.01

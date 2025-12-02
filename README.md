@@ -61,7 +61,7 @@ select * from staging.supabase_products
 
 # 5 Transform Layer - Consolidación y Limpieza de Datos
 
-## Ejecutar transformación completa (staging → dwh):
+## Ejecutar transformación completa (staging → dwh): 
 ```bash
 docker exec dwh-scheduler python transform_staging_to_dwh.py
 ```
@@ -148,40 +148,23 @@ cd SUPABASE/server; node update_product_skus.js
 ```
 
 # 8 Power BI
-crear metas:
-```sql
-INSERT INTO dwh.MetasVentas (customerId, productId, Anio, Mes, MetaUSD)
-SELECT
-    B.customerId,
-    B.productId,
-    B.Anio,
-    B.Mes,
-    CAST(
-        B.totalUSD * (0.9 + (ABS(CHECKSUM(NEWID())) % 21) / 100.0)
-        AS DECIMAL(18,2)
-    ) AS MetaUSD
-FROM (
-    SELECT
-        fs.customerId,
-        fs.productId,
-        dt.[year]  AS Anio,      -- Año desde dimTime
-        dt.[month] AS Mes,       -- Mes desde dimTime
-        SUM(fs.lineTotalUSD) AS totalUSD
-    FROM dwh.FactSales fs
-    JOIN dwh.dimTime dt
-        ON fs.timeID = dt.id
-    GROUP BY
-        fs.customerId,
-        fs.productId,
-        dt.[year],
-        dt.[month]
-) AS B
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM dwh.MetasVentas mv
-    WHERE mv.customerId = B.customerId
-      AND mv.productId  = B.productId
-      AND mv.Anio       = B.Anio
-      AND mv.Mes        = B.Mes
-);
+
+## 8.1 Generar Metas de Ventas
+
+Usar el stored procedure con diferentes escenarios:
+
+```bash
+# Escenario balanceado (+5% sobre ventas reales):
+docker exec sqlserver-dw /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'BasesDatos2!' -d MSSQL_DW -Q "EXEC dbo.sp_generar_metas_ventas @LimpiarAntes = 1"
+
+# Escenario conservador (ventas actuales):
+docker exec sqlserver-dw /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'BasesDatos2!' -d MSSQL_DW -Q "EXEC dbo.sp_generar_metas_ventas @Escenario = 'CONSERVADOR', @LimpiarAntes = 1"
+
+# Escenario agresivo (+15% con 10% crecimiento mensual):
+docker exec sqlserver-dw /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'BasesDatos2!' -d MSSQL_DW -Q "EXEC dbo.sp_generar_metas_ventas @Escenario = 'AGRESIVO', @CrecimientoBase = 10.0, @LimpiarAntes = 1"
 ```
+
+**Parámetros:**
+- `@Escenario`: CONSERVADOR | BALANCEADO | AGRESIVO
+- `@CrecimientoBase`: % de crecimiento mensual (default: 5.0)
+- `@LimpiarAntes`: 1 = limpiar metas existentes antes de generar
