@@ -168,3 +168,6 @@ docker exec sqlserver-dw /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Base
 - `@Escenario`: CONSERVADOR | BALANCEADO | AGRESIVO
 - `@CrecimientoBase`: % de crecimiento mensual (default: 5.0)
 - `@LimpiarAntes`: 1 = limpiar metas existentes antes de generar
+
+
+PD: JUEPUTAAAAAAAAAAAAAAAAAAAAA SANTIAGO VALVERDE
